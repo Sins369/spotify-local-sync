@@ -115,7 +115,7 @@ function analyzeStructure(samples: FileSample[]): AnalysisResult {
       .filter((s) => s.parts.length >= 3)
       .map((s) => s.parts[1]);
 
-    const topLevelIsGenre = looksLikeGenres(topLevel);
+    const topLevelIsGenre = looksLikeGenres(topLevel, samples);
 
     if (topLevelIsGenre) {
       return {
@@ -146,7 +146,7 @@ function analyzeStructure(samples: FileSample[]): AnalysisResult {
     const topLevel = samples
       .filter((s) => s.parts.length >= 4)
       .map((s) => s.parts[0]);
-    const topLevelIsGenre = looksLikeGenres(topLevel);
+    const topLevelIsGenre = looksLikeGenres(topLevel, samples);
 
     if (topLevelIsGenre) {
       const thirdLevel = samples
@@ -186,14 +186,22 @@ function analyzeStructure(samples: FileSample[]): AnalysisResult {
 function detectFilenamePattern(filename: string): string {
   const name = filename.replace(/\.[^.]+$/, "");
 
+  // "Title by Artist"
+  if (/^.+ by .+$/i.test(name)) {
+    return "{Title} by {Artist}";
+  }
+
+  // "01 - Title" or "01. Title"
   if (/^\d{1,3}\s*[-–—.]\s*.+/.test(name)) {
     return "{TrackNo} - {Title}";
   }
 
+  // "01 Title"
   if (/^\d{1,3}\s+.+/.test(name)) {
     return "{TrackNo} {Title}";
   }
 
+  // "Artist - Title"
   if (/^[^-]+ - .+/.test(name) && !/^\d/.test(name)) {
     return "{Artist} - {Title}";
   }
@@ -201,27 +209,29 @@ function detectFilenamePattern(filename: string): string {
   return "{TrackNo} {Title}";
 }
 
-const COMMON_GENRES = new Set([
-  "rock", "pop", "hip-hop", "hip hop", "rap", "r&b", "rnb", "jazz", "blues",
-  "country", "classical", "electronic", "edm", "dance", "house", "techno",
-  "metal", "punk", "indie", "alternative", "folk", "soul", "funk", "reggae",
-  "latin", "world", "soundtrack", "ambient", "lo-fi", "lofi", "trap",
-  "drum and bass", "dnb", "dubstep", "trance", "k-pop", "kpop", "j-pop",
-  "progressive rock", "hard rock", "soft rock", "classic rock", "heavy metal",
-  "death metal", "black metal", "thrash metal", "power metal", "nu metal",
-  "grunge", "emo", "post-punk", "new wave", "synthwave", "vaporwave",
-  "gospel", "christian", "worship", "opera", "choral", "orchestral",
-  "acoustic", "singer-songwriter", "bluegrass", "americana",
-  "disco", "garage", "grime", "afrobeats", "bossa nova", "samba",
-  "flamenco", "celtic", "ska", "dub", "psych", "psychedelic",
-  "experimental", "noise", "industrial", "shoegaze", "dream pop",
-  "chillout", "downtempo", "trip-hop", "trip hop",
-]);
+function looksLikeGenres(folderNames: string[], samples: FileSample[]): boolean {
+  const topLevelUnique = [...new Set(folderNames.map((n) => n.toLowerCase().trim()))];
 
-function looksLikeGenres(folderNames: string[]): boolean {
-  const unique = [...new Set(folderNames.map((n) => n.toLowerCase().trim()))];
-  const genreMatches = unique.filter((n) => COMMON_GENRES.has(n));
-  return genreMatches.length >= Math.ceil(unique.length * 0.4) && genreMatches.length >= 2;
+  if (samples.length < 2) return false;
+
+  const secondLevelNames = new Set(
+    samples
+      .filter((s) => s.parts.length >= 3)
+      .map((s) => s.parts[1].toLowerCase().trim())
+  );
+
+  const topLevelAppearsAsChild = topLevelUnique.filter((n) => secondLevelNames.has(n));
+  if (topLevelAppearsAsChild.length > topLevelUnique.length * 0.3) {
+    return false;
+  }
+
+  const uniqueTopLevel = topLevelUnique.length;
+  const uniqueSecondLevel = secondLevelNames.size;
+  if (uniqueSecondLevel > uniqueTopLevel * 2) {
+    return true;
+  }
+
+  return false;
 }
 
 function mode<T>(arr: T[]): T {

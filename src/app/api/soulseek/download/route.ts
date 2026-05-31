@@ -60,8 +60,9 @@ export async function POST(request: NextRequest) {
     const downloadId = downloadResult.lastInsertRowid;
 
     // Build the destination path
-    const musicPath = getSetting("music_source_path") || process.cwd();
+    const musicPath = getSetting("backup_dest_path") || getSetting("music_source_path") || process.cwd();
     const template =
+      getSetting("file_template") ||
       getSetting("path_template") ||
       "{AlbumArtist}/{Album}/{TrackNo} {Title}.{ext}";
 

@@ -97,6 +97,7 @@ export default function SyncPage() {
     fetchMissingLocally();
     fetchMissingOnSpotify();
     checkMatches();
+    fetch("/api/soulseek/connect", { method: "POST" }).catch(() => {});
   }, [fetchMissingLocally, fetchMissingOnSpotify, checkMatches]);
 
   async function handleRunMatching() {
@@ -257,6 +258,7 @@ function DownloadCard({ track }: { track: { id: number; spotify_id?: string; tit
   const [searching, setSearching] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
   async function handleSearch() {
@@ -279,6 +281,7 @@ function DownloadCard({ track }: { track: { id: number; spotify_id?: string; tit
 
   async function handleDownload(result: SoulseekResult) {
     setDownloading(result.file);
+    setDownloadError(null);
     try {
       const res = await fetch("/api/soulseek/download", {
         method: "POST",
@@ -289,8 +292,15 @@ function DownloadCard({ track }: { track: { id: number; spotify_id?: string; tit
           file: result.file,
         }),
       });
-      if (res.ok) setDownloaded(true);
-    } catch {} finally {
+      if (res.ok) {
+        setDownloaded(true);
+      } else {
+        const data = await res.json();
+        setDownloadError(data.error || "Download failed");
+      }
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Download failed");
+    } finally {
       setDownloading(null);
     }
   }
@@ -377,6 +387,9 @@ function DownloadCard({ track }: { track: { id: number; spotify_id?: string; tit
               <p className="text-xs text-[#64748B] py-2 text-center">No results found</p>
             ) : (
               <ScrollArea className="max-h-48">
+                {downloadError && (
+                  <p className="text-xs text-red-400 px-2 py-1 mb-1">{downloadError}</p>
+                )}
                 <div className="space-y-1">
                   {results.slice(0, 15).map((r, i) => (
                     <div

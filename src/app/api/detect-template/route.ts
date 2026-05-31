@@ -125,7 +125,8 @@ function analyzeStructure(samples: FileSample[]): AnalysisResult {
       };
     }
 
-    const hasYearInAlbum = secondLevel.some((name) => /\(\d{4}\)|\b\d{4}\b/.test(name));
+    const withYear = secondLevel.filter((name) => /^\d{4}\s|.\(\d{4}\)$/.test(name));
+    const hasYearInAlbum = withYear.length > secondLevel.length * 0.5;
 
     if (hasYearInAlbum) {
       return {
@@ -152,7 +153,8 @@ function analyzeStructure(samples: FileSample[]): AnalysisResult {
       const thirdLevel = samples
         .filter((s) => s.parts.length >= 4)
         .map((s) => s.parts[2]);
-      const hasYearInAlbum = thirdLevel.some((name) => /\(\d{4}\)|\b\d{4}\b/.test(name));
+      const withYear = thirdLevel.filter((name) => /^\d{4}\s|.\(\d{4}\)$/.test(name));
+      const hasYearInAlbum = withYear.length > thirdLevel.length * 0.5;
 
       if (hasYearInAlbum) {
         return {

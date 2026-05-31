@@ -254,8 +254,8 @@ export default function SyncPage() {
           <Card className="bg-[#0F172A] border-[#334155] overflow-hidden">
             <div className="flex h-[580px]">
               {/* Left: track list */}
-              <div className="w-80 shrink-0 border-r border-[#334155] flex flex-col">
-                <ScrollArea className="flex-1">
+              <div className="w-80 shrink-0 border-r border-[#334155] flex flex-col min-h-0">
+                <div className="flex-1 overflow-y-auto min-h-0">
                   <div className="p-1">
                     {loadingLocal ? (
                       <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 text-[#22C55E] animate-spin" /></div>
@@ -292,7 +292,7 @@ export default function SyncPage() {
                       })
                     )}
                   </div>
-                </ScrollArea>
+                </div>
 
                 {/* Pagination */}
                 {totalPages > 1 && (
@@ -309,7 +309,7 @@ export default function SyncPage() {
               </div>
 
               {/* Right: detail */}
-              <div className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 flex flex-col min-h-0 min-w-0">
                 {selectedTrack ? (
                   <DetailPanel
                     track={selectedTrack}
@@ -434,8 +434,8 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
   const otherResults = results.filter((r) => r.format !== "flac");
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 flex flex-col p-4 space-y-4 overflow-hidden">
+    <div className="h-full flex flex-col min-h-0">
+      <div className="flex-1 flex flex-col p-4 space-y-4 overflow-y-auto min-h-0">
         {/* Track header */}
         <div className="flex items-start gap-4 shrink-0">
           {track.album_art_url ? (
@@ -499,7 +499,7 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
             </div>
           </div>
         ) : (
-          <ScrollArea className="flex-1 min-h-0">
+          <div className="flex-1 overflow-y-auto min-h-0">
             <div className="space-y-1 pr-2">
               {flacResults.length > 0 && (
                 <>
@@ -521,7 +521,7 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
                 <p className="text-xs text-[#64748B] text-center py-4">No results on Soulseek</p>
               )}
             </div>
-          </ScrollArea>
+          </div>
         )}
       </div>
     </div>

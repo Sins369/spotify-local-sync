@@ -72,12 +72,11 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
   function stopPlayback() {
     const current = audioRef.current;
     if (current) {
-      current.onended = null;
-      current.onerror = null;
       current.pause();
-      current.src = "";
-      audioRef.current = null;
+      current.removeAttribute("src");
+      current.load();
     }
+    audioRef.current = null;
     setPlayingId(null);
   }
 
@@ -90,15 +89,13 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
     stopPlayback();
 
     const audio = new Audio();
-    audio.onended = () => setPlayingId(null);
-    audio.onerror = () => setPlayingId(null);
+    audio.preload = "auto";
+    audio.onended = () => { audioRef.current = null; setPlayingId(null); };
+    audio.onerror = () => { audioRef.current = null; setPlayingId(null); };
     audio.src = `/api/preview?path=${encodeURIComponent(member.path)}`;
     audioRef.current = audio;
     setPlayingId(member.id);
-
-    audio.addEventListener("canplay", () => {
-      audio.play().catch(() => {});
-    }, { once: true });
+    audio.play().catch(() => {});
   }
 
   function handleResolveAndStop(groupId: number, action: string, keepId?: number) {

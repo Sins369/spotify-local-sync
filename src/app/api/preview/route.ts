@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import fs from "fs";
 import path from "path";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   const filePath = request.nextUrl.searchParams.get("path");
 
@@ -16,6 +18,7 @@ export async function GET(request: NextRequest) {
 
     const stat = fs.statSync(filePath);
     const ext = path.extname(filePath).toLowerCase();
+    const fileSize = stat.size;
 
     const mimeTypes: Record<string, string> = {
       ".mp3": "audio/mpeg",
@@ -29,24 +32,22 @@ export async function GET(request: NextRequest) {
       ".aif": "audio/aiff",
     };
 
-    const contentType = mimeTypes[ext] || "audio/mpeg";
+    const contentType = mimeTypes[ext] || "application/octet-stream";
     const range = request.headers.get("range");
 
     if (range) {
       const parts = range.replace(/bytes=/, "").split("-");
       const start = parseInt(parts[0], 10);
-      const end = parts[1] ? parseInt(parts[1], 10) : Math.min(start + 2 * 1024 * 1024, stat.size - 1);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
       const chunkSize = end - start + 1;
 
-      const buffer = Buffer.alloc(chunkSize);
-      const fd = fs.openSync(filePath, "r");
-      fs.readSync(fd, buffer, 0, chunkSize, start);
-      fs.closeSync(fd);
+      const nodeStream = fs.createReadStream(filePath, { start, end });
+      const webStream = nodeToWebStream(nodeStream);
 
-      return new Response(buffer, {
+      return new Response(webStream, {
         status: 206,
         headers: {
-          "Content-Range": `bytes ${start}-${end}/${stat.size}`,
+          "Content-Range": `bytes ${start}-${end}/${fileSize}`,
           "Accept-Ranges": "bytes",
           "Content-Length": String(chunkSize),
           "Content-Type": contentType,
@@ -54,10 +55,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const buffer = fs.readFileSync(filePath);
-    return new Response(buffer, {
+    const nodeStream = fs.createReadStream(filePath);
+    const webStream = nodeToWebStream(nodeStream);
+
+    return new Response(webStream, {
       headers: {
-        "Content-Length": String(stat.size),
+        "Content-Length": String(fileSize),
         "Content-Type": contentType,
         "Accept-Ranges": "bytes",
       },
@@ -65,4 +68,24 @@ export async function GET(request: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Failed to stream file" }, { status: 500 });
   }
+}
+
+function nodeToWebStream(nodeStream: fs.ReadStream): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      nodeStream.on("data", (chunk: Buffer | string) => {
+        const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+        controller.enqueue(new Uint8Array(buf));
+      });
+      nodeStream.on("end", () => {
+        controller.close();
+      });
+      nodeStream.on("error", (err) => {
+        controller.error(err);
+      });
+    },
+    cancel() {
+      nodeStream.destroy();
+    },
+  });
 }

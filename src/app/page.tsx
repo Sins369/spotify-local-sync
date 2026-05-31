@@ -11,10 +11,11 @@ import {
 } from "@/components/ui/card";
 
 interface ScanStats {
-  local_tracks: number;
-  matched: number;
-  spotify_liked: number;
-  duplicates: number;
+  total_local_tracks: number;
+  matched_tracks: number;
+  spotify_tracks: number;
+  unmatched_tracks: number;
+  duplicate_groups: number;
   last_scan: string | null;
 }
 
@@ -49,7 +50,7 @@ export default function DashboardPage() {
       } else if (action === "sync") {
         await fetch("/api/spotify/sync", { method: "POST" });
       } else if (action === "duplicates") {
-        await fetch("/api/duplicates/detect", { method: "POST" });
+        await fetch("/api/duplicates", { method: "POST" });
       }
       await fetchStats();
     } catch {
@@ -60,10 +61,10 @@ export default function DashboardPage() {
   }
 
   const statCards = [
-    { label: "Local Tracks", value: stats?.local_tracks ?? 0 },
-    { label: "Matched", value: stats?.matched ?? 0 },
-    { label: "Spotify Liked", value: stats?.spotify_liked ?? 0 },
-    { label: "Duplicates", value: stats?.duplicates ?? 0 },
+    { label: "Local Tracks", value: stats?.total_local_tracks ?? 0 },
+    { label: "Matched", value: stats?.matched_tracks ?? 0 },
+    { label: "Spotify Liked", value: stats?.spotify_tracks ?? 0 },
+    { label: "Duplicates", value: stats?.duplicate_groups ?? 0 },
   ];
 
   return (

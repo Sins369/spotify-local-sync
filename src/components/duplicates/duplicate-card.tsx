@@ -1,9 +1,11 @@
 "use client";
 
+import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { Play, Pause } from "lucide-react";
 
 export interface DuplicateMember {
   id: number;
@@ -45,11 +47,39 @@ function formatBitrate(bitrate: number): string {
   return `${bitrate} kbps`;
 }
 
+function formatDuration(ms: number): string {
+  const mins = Math.floor(ms / 60000);
+  const secs = Math.floor((ms % 60000) / 1000);
+  return `${mins}:${secs.toString().padStart(2, "0")}`;
+}
+
 export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProps) {
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
   const sorted = [...group.members].sort((a, b) => (b.quality_score ?? 0) - (a.quality_score ?? 0));
   const bestId = sorted[0]?.local_track_id;
   const title = sorted[0]?.title ?? "Unknown";
   const artist = sorted[0]?.artist ?? "Unknown";
+
+  function togglePlay(member: DuplicateMember) {
+    if (playingId === member.id) {
+      audioRef.current?.pause();
+      setPlayingId(null);
+      return;
+    }
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
+    const audio = new Audio(`/api/preview?path=${encodeURIComponent(member.path)}`);
+    audio.onended = () => setPlayingId(null);
+    audio.onerror = () => setPlayingId(null);
+    audio.play();
+    audioRef.current = audio;
+    setPlayingId(member.id);
+  }
 
   return (
     <Card className="bg-[#0F172A] border-[#334155]">
@@ -61,24 +91,41 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
       <CardContent className="space-y-2">
         {sorted.map((member) => {
           const isBest = member.local_track_id === bestId;
-          const filename = member.path.split(/[\\/]/).pop() ?? member.path;
-          const folder = member.path.split(/[\\/]/).slice(-3, -1).join("/");
+          const isPlaying = playingId === member.id;
 
           return (
             <div
               key={member.id}
               className={cn(
-                "flex items-center justify-between gap-3 rounded-md border p-3",
+                "flex items-center gap-3 rounded-md border p-3",
                 isBest
                   ? "border-[#22C55E]/40 bg-[#22C55E]/5"
                   : "border-[#334155] bg-[#020617]"
               )}
             >
+              <button
+                onClick={() => togglePlay(member)}
+                className="shrink-0 w-8 h-8 rounded-full bg-[#1E293B] hover:bg-[#334155] flex items-center justify-center transition-colors"
+              >
+                {isPlaying ? (
+                  <Pause className="w-3.5 h-3.5 text-[#22C55E]" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 text-[#94A3B8] ml-0.5" />
+                )}
+              </button>
+
               <div className="min-w-0 flex-1 space-y-1">
-                <p className="text-xs font-mono text-[#94A3B8] truncate" title={member.path}>
-                  {folder}
-                </p>
-                <div className="flex items-center gap-2 text-xs text-[#64748B]">
+                <div className="flex items-center gap-2">
+                  <p className="text-xs text-[#F8FAFC] truncate">
+                    {member.album ?? "Unknown Album"}
+                  </p>
+                  {isBest && (
+                    <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px] px-1.5 py-0 shrink-0">
+                      Best
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-2 text-[11px] text-[#64748B]">
                   {member.codec && (
                     <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
                       {member.codec}
@@ -86,13 +133,13 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
                   )}
                   {member.bitrate && <span>{formatBitrate(member.bitrate)}</span>}
                   {member.size_bytes && <span>{formatSize(member.size_bytes)}</span>}
-                  {isBest && (
-                    <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px] px-1.5 py-0">
-                      Best
-                    </Badge>
-                  )}
+                  {member.duration_ms && <span>{formatDuration(member.duration_ms)}</span>}
                 </div>
+                <p className="text-[10px] font-mono text-[#475569] truncate" title={member.path}>
+                  {member.path.split(/[\\/]/).slice(-3, -1).join("/")}
+                </p>
               </div>
+
               <Button
                 variant="outline"
                 size="sm"

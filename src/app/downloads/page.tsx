@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import {
   Card,
   CardContent,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
 import {
   Download,
@@ -13,6 +15,10 @@ import {
   X,
   Loader2,
   RefreshCw,
+  Trash2,
+  Music,
+  RotateCcw,
+  ExternalLink,
 } from "lucide-react";
 
 interface DownloadRecord {
@@ -25,21 +31,34 @@ interface DownloadRecord {
   error: string | null;
   started_at: string | null;
   completed_at: string | null;
+  created_at: string | null;
   title: string | null;
   artist: string | null;
   album: string | null;
+  spotify_id: string | null;
+  album_art_url: string | null;
+}
+
+interface QueueStats {
+  active: number;
+  completed: number;
+  failed: number;
+  total: number;
 }
 
 export default function DownloadsPage() {
   const [downloads, setDownloads] = useState<DownloadRecord[]>([]);
+  const [stats, setStats] = useState<QueueStats>({ active: 0, completed: 0, failed: 0, total: 0 });
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState<"all" | "active" | "completed" | "failed">("all");
 
   const fetchDownloads = useCallback(async () => {
     try {
       const res = await fetch("/api/soulseek/queue");
       if (res.ok) {
         const data = await res.json();
-        setDownloads(Array.isArray(data) ? data : data.downloads ?? []);
+        setDownloads(data.downloads ?? []);
+        setStats(data.stats ?? { active: 0, completed: 0, failed: 0, total: 0 });
       }
     } catch {} finally {
       setLoading(false);
@@ -48,37 +67,60 @@ export default function DownloadsPage() {
 
   useEffect(() => {
     fetchDownloads();
-    const interval = setInterval(fetchDownloads, 5000);
+    const interval = setInterval(fetchDownloads, 3000);
     return () => clearInterval(interval);
   }, [fetchDownloads]);
 
-  const active = downloads.filter((d) => d.status === "downloading");
-  const completed = downloads.filter((d) => d.status === "complete");
-  const failed = downloads.filter((d) => d.status === "failed");
+  async function handleClear(action: string) {
+    await fetch("/api/soulseek/queue", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action }),
+    });
+    fetchDownloads();
+  }
 
-  const statusIcon = (status: string) => {
-    switch (status) {
-      case "downloading": return <Loader2 className="w-4 h-4 text-[#22C55E] animate-spin" />;
-      case "complete": return <Check className="w-4 h-4 text-[#22C55E]" />;
-      case "failed": return <X className="w-4 h-4 text-red-400" />;
-      default: return <Download className="w-4 h-4 text-[#64748B]" />;
-    }
-  };
+  async function handleRemove(id: number) {
+    await fetch("/api/soulseek/queue", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "remove", id }),
+    });
+    fetchDownloads();
+  }
 
-  const statusBadge = (status: string) => {
-    switch (status) {
-      case "downloading": return <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">Downloading</Badge>;
-      case "complete": return <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">Complete</Badge>;
-      case "failed": return <Badge className="bg-red-500/20 text-red-400 text-[10px]">Failed</Badge>;
-      default: return <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">{status}</Badge>;
-    }
-  };
+  const filtered = downloads.filter((d) => {
+    if (filter === "all") return true;
+    if (filter === "active") return d.status === "downloading" || d.status === "queued";
+    if (filter === "completed") return d.status === "complete";
+    if (filter === "failed") return d.status === "failed";
+    return true;
+  });
+
+  function formatTime(dateStr: string | null) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr + "Z");
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function formatDate(dateStr: string | null) {
+    if (!dateStr) return "";
+    const d = new Date(dateStr + "Z");
+    const today = new Date();
+    if (d.toDateString() === today.toDateString()) return "Today";
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+    return d.toLocaleDateString();
+  }
 
   if (loading) {
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 max-w-5xl">
         <h2 className="text-2xl font-bold text-[#F8FAFC]">Downloads</h2>
-        <p className="text-[#94A3B8] text-sm">Loading...</p>
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-5 h-5 text-[#22C55E] animate-spin" />
+        </div>
       </div>
     );
   }
@@ -88,67 +130,83 @@ export default function DownloadsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-[#F8FAFC]">Downloads</h2>
-          <p className="text-[#94A3B8] text-sm mt-1">
-            {active.length > 0 && `${active.length} downloading, `}
-            {completed.length} completed{failed.length > 0 && `, ${failed.length} failed`}
-          </p>
+          <p className="text-[#94A3B8] text-sm mt-1">{stats.total} total downloads</p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={fetchDownloads}
-          className="gap-2 border-[#334155]"
-        >
-          <RefreshCw className="w-3 h-3" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          {stats.completed > 0 && (
+            <Button variant="outline" size="sm" className="text-xs border-[#334155] gap-1.5"
+              onClick={() => handleClear("clear_completed")}>
+              <Trash2 className="w-3 h-3" /> Clear Completed
+            </Button>
+          )}
+          {stats.failed > 0 && (
+            <Button variant="outline" size="sm" className="text-xs border-[#334155] text-red-400 gap-1.5"
+              onClick={() => handleClear("clear_failed")}>
+              <Trash2 className="w-3 h-3" /> Clear Failed
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="bg-[#0F172A] border-[#334155]">
-          <CardContent className="flex items-center gap-3 py-4">
-            <Loader2 className="w-5 h-5 text-[#22C55E]" />
-            <div>
-              <p className="text-2xl font-bold text-[#F8FAFC]">{active.length}</p>
-              <p className="text-xs text-[#94A3B8]">Active</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-[#0F172A] border-[#334155]">
-          <CardContent className="flex items-center gap-3 py-4">
-            <Check className="w-5 h-5 text-[#22C55E]" />
-            <div>
-              <p className="text-2xl font-bold text-[#F8FAFC]">{completed.length}</p>
-              <p className="text-xs text-[#94A3B8]">Completed</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-[#0F172A] border-[#334155]">
-          <CardContent className="flex items-center gap-3 py-4">
-            <X className="w-5 h-5 text-red-400" />
-            <div>
-              <p className="text-2xl font-bold text-[#F8FAFC]">{failed.length}</p>
-              <p className="text-xs text-[#94A3B8]">Failed</p>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Stats cards */}
+      <div className="grid grid-cols-4 gap-3">
+        {[
+          { label: "Active", value: stats.active, icon: Loader2, color: "#22C55E", filterKey: "active" as const, iconClass: "animate-spin" },
+          { label: "Completed", value: stats.completed, icon: Check, color: "#22C55E", filterKey: "completed" as const, iconClass: "" },
+          { label: "Failed", value: stats.failed, icon: X, color: "#EF4444", filterKey: "failed" as const, iconClass: "" },
+          { label: "Total", value: stats.total, icon: Download, color: "#94A3B8", filterKey: "all" as const, iconClass: "" },
+        ].map((s) => {
+          const Icon = s.icon;
+          const isActive = filter === s.filterKey;
+          return (
+            <button key={s.label} onClick={() => setFilter(s.filterKey)}
+              className={`text-left rounded-lg border p-3 transition-all ${
+                isActive
+                  ? "bg-[#0F172A] border-[#22C55E]/30"
+                  : "bg-[#0F172A] border-[#334155] hover:border-[#475569]"
+              }`}>
+              <div className="flex items-center gap-2 mb-1">
+                <Icon className={`w-3.5 h-3.5 ${s.iconClass}`} style={{ color: s.color }} />
+                <span className="text-[11px] text-[#94A3B8]">{s.label}</span>
+              </div>
+              <p className="text-xl font-bold text-[#F8FAFC]">{s.value}</p>
+            </button>
+          );
+        })}
       </div>
 
-      {downloads.length === 0 ? (
+      {/* Download list */}
+      {filtered.length === 0 ? (
         <Card className="bg-[#0F172A] border-[#334155]">
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Download className="w-10 h-10 text-[#334155] mb-3" />
-            <p className="text-[#64748B]">No downloads yet</p>
-            <p className="text-xs text-[#475569] mt-1">Go to Sync to search and download tracks</p>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <Download className="w-10 h-10 text-[#1E293B] mb-3" />
+            <p className="text-[#64748B]">
+              {stats.total === 0
+                ? "No downloads yet"
+                : `No ${filter === "all" ? "" : filter} downloads`}
+            </p>
+            {stats.total === 0 && (
+              <p className="text-xs text-[#475569] mt-1">Go to Sync to search and download tracks</p>
+            )}
           </CardContent>
         </Card>
       ) : (
         <div className="space-y-2">
-          {downloads.map((dl) => (
-            <Card key={dl.id} className="bg-[#0F172A] border-[#334155]">
+          {filtered.map((dl) => (
+            <Card key={dl.id} className={`bg-[#0F172A] border-[#334155] transition-all ${
+              dl.status === "downloading" ? "border-[#22C55E]/30" : ""
+            }`}>
               <CardContent className="flex items-center gap-4 py-3">
-                {statusIcon(dl.status)}
+                {/* Album art */}
+                {dl.album_art_url ? (
+                  <img src={dl.album_art_url} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
+                ) : (
+                  <div className="w-12 h-12 rounded bg-[#1E293B] flex items-center justify-center shrink-0">
+                    <Music className="w-5 h-5 text-[#475569]" />
+                  </div>
+                )}
+
+                {/* Track info */}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-[#F8FAFC] truncate">
                     {dl.title ?? dl.filename ?? "Unknown"}
@@ -156,20 +214,75 @@ export default function DownloadsPage() {
                   <p className="text-xs text-[#94A3B8] truncate">
                     {dl.artist ?? "Unknown"}{dl.album ? ` — ${dl.album}` : ""}
                   </p>
+                  <div className="flex items-center gap-3 mt-1">
+                    {dl.source_user && (
+                      <span className="text-[10px] text-[#475569]">from {dl.source_user}</span>
+                    )}
+                    {dl.filename && (
+                      <span className="text-[10px] text-[#475569] font-mono truncate max-w-48">{dl.filename}</span>
+                    )}
+                  </div>
                   {dl.error && (
-                    <p className="text-xs text-red-400 mt-1">{dl.error}</p>
+                    <p className="text-[11px] text-red-400 mt-1">{dl.error}</p>
                   )}
-                  {dl.download_path && (
-                    <p className="text-[10px] font-mono text-[#475569] truncate mt-1" title={dl.download_path}>
+                  {dl.download_path && dl.status === "complete" && (
+                    <p className="text-[10px] font-mono text-[#22C55E]/60 mt-1 truncate" title={dl.download_path}>
                       {dl.download_path.split(/[\\/]/).slice(-3).join("/")}
                     </p>
                   )}
-                </div>
-                <div className="flex flex-col items-end gap-1 shrink-0">
-                  {statusBadge(dl.status)}
-                  {dl.source_user && (
-                    <span className="text-[10px] text-[#475569]">from {dl.source_user}</span>
+
+                  {/* Progress bar for active downloads */}
+                  {dl.status === "downloading" && (
+                    <div className="mt-2 w-full h-1 bg-[#1E293B] rounded-full overflow-hidden">
+                      <div className="h-full bg-[#22C55E] rounded-full animate-pulse w-full" />
+                    </div>
                   )}
+                </div>
+
+                {/* Status + actions */}
+                <div className="flex flex-col items-end gap-2 shrink-0">
+                  {dl.status === "downloading" && (
+                    <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">
+                      <Loader2 className="w-3 h-3 animate-spin mr-1" />Downloading
+                    </Badge>
+                  )}
+                  {dl.status === "complete" && (
+                    <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">
+                      <Check className="w-3 h-3 mr-1" />Complete
+                    </Badge>
+                  )}
+                  {dl.status === "failed" && (
+                    <Badge className="bg-red-500/20 text-red-400 text-[10px]">
+                      <X className="w-3 h-3 mr-1" />Failed
+                    </Badge>
+                  )}
+
+                  <div className="flex items-center gap-1">
+                    {dl.status === "complete" && dl.spotify_id && (
+                      <a
+                        href={`https://open.spotify.com/track/${dl.spotify_id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-[#F8FAFC] transition-colors"
+                        title="Open on Spotify"
+                      >
+                        <ExternalLink className="w-3.5 h-3.5" />
+                      </a>
+                    )}
+                    {(dl.status === "complete" || dl.status === "failed") && (
+                      <button
+                        onClick={() => handleRemove(dl.id)}
+                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-red-400 transition-colors"
+                        title="Remove"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+
+                  <span className="text-[10px] text-[#475569]">
+                    {formatDate(dl.created_at)} {formatTime(dl.created_at)}
+                  </span>
                 </div>
               </CardContent>
             </Card>

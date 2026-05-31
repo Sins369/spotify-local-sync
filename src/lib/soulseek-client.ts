@@ -30,7 +30,7 @@ export async function searchSoulseek(query: string): Promise<SoulseekResult[]> {
   if (!slskClient) throw new Error("Soulseek not connected");
   return new Promise((resolve, reject) => {
     const results: SoulseekResult[] = [];
-    slskClient.search({ req: query, timeout: 15000 }, (err: Error | null, rawResults: any[]) => {
+    slskClient.search({ req: query, timeout: 8000 }, (err: Error | null, rawResults: any[]) => {
       if (err) return reject(err);
       for (const r of rawResults || []) {
         const filePath: string = r.file ?? "";

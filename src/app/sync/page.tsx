@@ -21,6 +21,9 @@ import {
   Check,
   ExternalLink,
   X,
+  ChevronLeft,
+  ChevronRight,
+  Zap,
 } from "lucide-react";
 import type { SoulseekResult } from "@/types";
 
@@ -42,6 +45,8 @@ interface LocalTrack {
   uri?: string;
 }
 
+const PAGE_SIZE = 25;
+
 export default function SyncPage() {
   const [missingLocally, setMissingLocally] = useState<SpotifyTrack[]>([]);
   const [missingOnSpotify, setMissingOnSpotify] = useState<LocalTrack[]>([]);
@@ -55,6 +60,10 @@ export default function SyncPage() {
   const [tab, setTab] = useState<"download" | "like">("download");
   const [selectedTrack, setSelectedTrack] = useState<SpotifyTrack | null>(null);
   const [downloadedIds, setDownloadedIds] = useState<Set<number>>(new Set());
+  const [page, setPage] = useState(0);
+  const [searchCache, setSearchCache] = useState<Map<number, SoulseekResult[]>>(new Map());
+  const [preloadingIds, setPreloadingIds] = useState<Set<number>>(new Set());
+  const preloadAbort = useRef<AbortController | null>(null);
 
   const fetchMissingLocally = useCallback(async () => {
     setLoadingLocal(true);
@@ -89,6 +98,65 @@ export default function SyncPage() {
     fetch("/api/soulseek/connect", { method: "POST" }).catch(() => {});
   }, [fetchMissingLocally, fetchMissingOnSpotify, checkMatches]);
 
+  const filteredLocal = missingLocally.filter((t) => {
+    if (downloadedIds.has(t.id)) return false;
+    if (!searchFilter) return true;
+    const q = searchFilter.toLowerCase();
+    return t.title?.toLowerCase().includes(q) || t.artist?.toLowerCase().includes(q) || t.album?.toLowerCase().includes(q);
+  });
+
+  const totalPages = Math.ceil(filteredLocal.length / PAGE_SIZE);
+  const pagedTracks = filteredLocal.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+
+  // Preload Soulseek searches for current page in background
+  useEffect(() => {
+    if (tab !== "download" || pagedTracks.length === 0) return;
+
+    preloadAbort.current?.abort();
+    const controller = new AbortController();
+    preloadAbort.current = controller;
+
+    const toPreload = pagedTracks.filter((t) => !searchCache.has(t.id));
+    if (toPreload.length === 0) return;
+
+    let cancelled = false;
+    async function preloadSequentially() {
+      for (const track of toPreload) {
+        if (cancelled) break;
+        if (searchCache.has(track.id)) continue;
+
+        setPreloadingIds((prev) => new Set(prev).add(track.id));
+        try {
+          const res = await fetch("/api/soulseek/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query: `${track.artist} ${track.title}` }),
+            signal: controller.signal,
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const results: SoulseekResult[] = Array.isArray(data) ? data : data.results ?? [];
+            setSearchCache((prev) => new Map(prev).set(track.id, results.slice(0, 30)));
+          }
+        } catch {
+          if (cancelled) break;
+        } finally {
+          setPreloadingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(track.id);
+            return next;
+          });
+        }
+      }
+    }
+
+    preloadSequentially();
+    return () => { cancelled = true; controller.abort(); };
+  }, [tab, page, pagedTracks.map((t) => t.id).join(",")]);
+
+  // Reset page when filter changes
+  useEffect(() => { setPage(0); }, [searchFilter]);
+
   async function handleRunMatching() {
     setMatchLoading(true);
     setMatchResult(null);
@@ -106,18 +174,13 @@ export default function SyncPage() {
     setDownloadedIds((prev) => new Set(prev).add(trackId));
   }
 
-  const filteredLocal = missingLocally.filter((t) => {
-    if (downloadedIds.has(t.id)) return false;
-    if (!searchFilter) return true;
-    const q = searchFilter.toLowerCase();
-    return t.title?.toLowerCase().includes(q) || t.artist?.toLowerCase().includes(q) || t.album?.toLowerCase().includes(q);
-  });
-
   const filteredSpotify = missingOnSpotify.filter((t) => {
     if (!spotifySearchFilter) return true;
     const q = spotifySearchFilter.toLowerCase();
     return t.title?.toLowerCase().includes(q) || t.artist?.toLowerCase().includes(q) || t.album?.toLowerCase().includes(q);
   });
+
+  const preloadedCount = pagedTracks.filter((t) => searchCache.has(t.id)).length;
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -131,7 +194,7 @@ export default function SyncPage() {
           <CardContent className="flex items-center justify-between py-4">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-[#F59E0B]" />
-              <p className="text-sm text-[#F8FAFC]">Run matching first to find gaps between your libraries</p>
+              <p className="text-sm text-[#F8FAFC]">Run matching first to find gaps</p>
             </div>
             <Button onClick={handleRunMatching} disabled={matchLoading} className="bg-[#22C55E] text-[#020617] hover:bg-[#16A34A]">
               {matchLoading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <GitCompareArrows className="w-4 h-4 mr-2" />}
@@ -140,144 +203,153 @@ export default function SyncPage() {
           </CardContent>
         </Card>
       )}
-
       {matchResult && <p className="text-sm text-[#22C55E]">{matchResult}</p>}
 
-      {/* Tab buttons */}
+      {/* Tabs */}
       <div className="flex gap-2">
-        <button
-          onClick={() => { setTab("download"); setSelectedTrack(null); }}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            tab === "download"
-              ? "bg-[#22C55E]/10 text-[#22C55E] border border-[#22C55E]/30"
-              : "bg-[#0F172A] text-[#94A3B8] border border-[#334155] hover:border-[#475569]"
-          }`}
-        >
-          <Download className="w-4 h-4" />
-          Download to Local
-          <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">{missingLocally.length - downloadedIds.size}</Badge>
+        <button onClick={() => { setTab("download"); setSelectedTrack(null); }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "download" ? "bg-[#22C55E]/10 text-[#22C55E] border border-[#22C55E]/30" : "bg-[#0F172A] text-[#94A3B8] border border-[#334155] hover:border-[#475569]"}`}>
+          <Download className="w-4 h-4" />Download to Local
+          <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">{filteredLocal.length}</Badge>
         </button>
-        <button
-          onClick={() => { setTab("like"); setSelectedTrack(null); }}
-          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-            tab === "like"
-              ? "bg-[#A855F7]/10 text-[#A855F7] border border-[#A855F7]/30"
-              : "bg-[#0F172A] text-[#94A3B8] border border-[#334155] hover:border-[#475569]"
-          }`}
-        >
-          <Heart className="w-4 h-4" />
-          Like on Spotify
+        <button onClick={() => { setTab("like"); setSelectedTrack(null); }}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === "like" ? "bg-[#A855F7]/10 text-[#A855F7] border border-[#A855F7]/30" : "bg-[#0F172A] text-[#94A3B8] border border-[#334155] hover:border-[#475569]"}`}>
+          <Heart className="w-4 h-4" />Like on Spotify
           <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">{missingOnSpotify.length}</Badge>
         </button>
         {downloadedIds.size > 0 && (
           <Link href="/downloads" className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-[#0F172A] text-[#22C55E] border border-[#22C55E]/20 hover:border-[#22C55E]/40 transition-all">
-            <Check className="w-4 h-4" />
-            {downloadedIds.size} Downloaded
-            <ExternalLink className="w-3 h-3" />
+            <Check className="w-4 h-4" />{downloadedIds.size} Downloaded<ExternalLink className="w-3 h-3" />
           </Link>
         )}
       </div>
 
-      {/* Download to Local — master-detail layout */}
+      {/* Download to Local */}
       {tab === "download" && (
-        <div className="flex gap-4 min-h-[600px]">
-          {/* Track list (left) */}
-          <div className="w-80 shrink-0 flex flex-col">
-            <div className="relative mb-3">
+        <div className="space-y-3">
+          {/* Full-width toolbar */}
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1">
               <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
-              <Input
-                placeholder="Filter tracks..."
-                value={searchFilter}
-                onChange={(e) => setSearchFilter(e.target.value)}
-                className="pl-9 bg-[#0F172A] border-[#334155] text-[#F8FAFC] h-9 text-sm"
-              />
+              <Input placeholder="Search by title, artist, or album..." value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9 bg-[#0F172A] border-[#334155] text-[#F8FAFC] h-10" />
             </div>
-            <p className="text-[10px] text-[#64748B] mb-2">{filteredLocal.length} tracks</p>
-            <ScrollArea className="flex-1 border border-[#334155] rounded-lg bg-[#0F172A]">
-              <div className="p-1">
-                {loadingLocal ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="w-4 h-4 text-[#22C55E] animate-spin" />
-                  </div>
-                ) : filteredLocal.length === 0 ? (
-                  <p className="text-xs text-[#64748B] py-8 text-center">
-                    {missingLocally.length === 0 ? "All synced!" : "No matches for filter"}
-                  </p>
-                ) : (
-                  filteredLocal.slice(0, 100).map((track) => (
-                    <button
-                      key={track.id}
-                      onClick={() => setSelectedTrack(track)}
-                      className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
-                        selectedTrack?.id === track.id
-                          ? "bg-[#22C55E]/10 border border-[#22C55E]/20"
-                          : "hover:bg-[#1E293B] border border-transparent"
-                      }`}
-                    >
-                      {track.album_art_url ? (
-                        <img src={track.album_art_url} alt="" className="w-9 h-9 rounded object-cover shrink-0" />
-                      ) : (
-                        <div className="w-9 h-9 rounded bg-[#1E293B] flex items-center justify-center shrink-0">
-                          <Music className="w-4 h-4 text-[#475569]" />
-                        </div>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-[#F8FAFC] truncate">{track.title ?? "Unknown"}</p>
-                        <p className="text-[11px] text-[#94A3B8] truncate">{track.artist ?? "Unknown"}</p>
-                      </div>
-                    </button>
-                  ))
-                )}
-                {filteredLocal.length > 100 && (
-                  <p className="text-[10px] text-[#64748B] text-center py-2">Use filter to narrow down</p>
-                )}
-              </div>
-            </ScrollArea>
+            <div className="flex items-center gap-2 shrink-0">
+              {preloadingIds.size > 0 ? (
+                <div className="flex items-center gap-1.5 text-[#64748B]">
+                  <Loader2 className="w-3.5 h-3.5 text-[#22C55E] animate-spin" />
+                  <span className="text-xs">Preloading results...</span>
+                </div>
+              ) : preloadedCount === pagedTracks.length && pagedTracks.length > 0 ? (
+                <div className="flex items-center gap-1.5 text-[#22C55E]">
+                  <Zap className="w-3.5 h-3.5" />
+                  <span className="text-xs">Page ready</span>
+                </div>
+              ) : null}
+              <span className="text-xs text-[#64748B]">{filteredLocal.length} tracks</span>
+            </div>
           </div>
 
-          {/* Detail panel (right) */}
-          <div className="flex-1">
-            {selectedTrack ? (
-              <DetailPanel
-                track={selectedTrack}
-                onDownloaded={() => handleDownloaded(selectedTrack.id)}
-                onClose={() => setSelectedTrack(null)}
-              />
-            ) : (
-              <Card className="bg-[#0F172A] border-[#334155] h-full flex items-center justify-center">
-                <CardContent className="text-center py-12">
-                  <Music className="w-12 h-12 text-[#1E293B] mx-auto mb-3" />
-                  <p className="text-[#64748B]">Select a track to search and download</p>
-                  <p className="text-xs text-[#475569] mt-1">Click any track on the left to get started</p>
-                </CardContent>
-              </Card>
-            )}
-          </div>
+          {/* Split panel */}
+          <Card className="bg-[#0F172A] border-[#334155] overflow-hidden">
+            <div className="flex h-[580px]">
+              {/* Left: track list */}
+              <div className="w-80 shrink-0 border-r border-[#334155] flex flex-col">
+                <ScrollArea className="flex-1">
+                  <div className="p-1">
+                    {loadingLocal ? (
+                      <div className="flex items-center justify-center py-16"><Loader2 className="w-5 h-5 text-[#22C55E] animate-spin" /></div>
+                    ) : pagedTracks.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-16">
+                        <Music className="w-8 h-8 text-[#1E293B] mb-2" />
+                        <p className="text-xs text-[#64748B]">{missingLocally.length === 0 ? "All synced!" : "No matches for filter"}</p>
+                      </div>
+                    ) : (
+                      pagedTracks.map((track) => {
+                        const cached = searchCache.has(track.id);
+                        const isPreloading = preloadingIds.has(track.id);
+                        const isSelected = selectedTrack?.id === track.id;
+                        return (
+                          <button key={track.id} onClick={() => setSelectedTrack(track)}
+                            className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
+                              isSelected ? "bg-[#22C55E]/10" : "hover:bg-[#1E293B]"
+                            }`}>
+                            {track.album_art_url ? (
+                              <img src={track.album_art_url} alt="" className="w-10 h-10 rounded object-cover shrink-0" />
+                            ) : (
+                              <div className="w-10 h-10 rounded bg-[#1E293B] flex items-center justify-center shrink-0">
+                                <Music className="w-4 h-4 text-[#475569]" />
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="text-sm font-medium text-[#F8FAFC] truncate">{track.title ?? "Unknown"}</p>
+                              <p className="text-[11px] text-[#94A3B8] truncate">{track.artist ?? "Unknown"}</p>
+                            </div>
+                            {isPreloading && <Loader2 className="w-3 h-3 text-[#475569] animate-spin shrink-0" />}
+                            {cached && !isPreloading && <Zap className="w-3 h-3 text-[#22C55E]/60 shrink-0" />}
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
+                </ScrollArea>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between px-3 py-2 border-t border-[#334155]">
+                    <Button variant="ghost" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)} className="h-7 px-2">
+                      <ChevronLeft className="w-4 h-4" />
+                    </Button>
+                    <span className="text-xs text-[#64748B]">{page + 1} / {totalPages}</span>
+                    <Button variant="ghost" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)} className="h-7 px-2">
+                      <ChevronRight className="w-4 h-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Right: detail */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {selectedTrack ? (
+                  <DetailPanel
+                    track={selectedTrack}
+                    cachedResults={searchCache.get(selectedTrack.id)}
+                    onDownloaded={() => handleDownloaded(selectedTrack.id)}
+                    onClose={() => setSelectedTrack(null)}
+                    onCacheResults={(id, results) => setSearchCache((prev) => new Map(prev).set(id, results))}
+                  />
+                ) : (
+                  <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
+                    <Music className="w-12 h-12 text-[#1E293B] mb-3" />
+                    <p className="text-[#64748B]">Select a track to preview and download</p>
+                    <p className="text-xs text-[#475569] mt-1">Soulseek results are preloading in the background</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </Card>
         </div>
       )}
 
       {/* Like on Spotify */}
       {tab === "like" && (
-        <LikeSection
-          tracks={filteredSpotify}
-          allTracks={missingOnSpotify}
-          loading={loadingSpotify}
-          searchFilter={spotifySearchFilter}
-          onSearchChange={setSpotifySearchFilter}
-        />
+        <LikeSection tracks={filteredSpotify} allTracks={missingOnSpotify} loading={loadingSpotify}
+          searchFilter={spotifySearchFilter} onSearchChange={setSpotifySearchFilter} />
       )}
     </div>
   );
 }
 
-function DetailPanel({ track, onDownloaded, onClose }: {
+function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResults }: {
   track: SpotifyTrack;
+  cachedResults?: SoulseekResult[];
   onDownloaded: () => void;
   onClose: () => void;
+  onCacheResults: (id: number, results: SoulseekResult[]) => void;
 }) {
-  const [results, setResults] = useState<SoulseekResult[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [searched, setSearched] = useState(false);
+  const [results, setResults] = useState<SoulseekResult[]>(cachedResults ?? []);
+  const [searching, setSearching] = useState(!cachedResults);
+  const [searched, setSearched] = useState(!!cachedResults);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -286,14 +358,21 @@ function DetailPanel({ track, onDownloaded, onClose }: {
   useEffect(() => {
     if (track.id !== prevTrackId.current) {
       prevTrackId.current = track.id;
-      setResults([]);
-      setSearched(false);
       setDownloaded(false);
       setError(null);
       setDownloading(null);
-      handleSearch();
+
+      if (cachedResults) {
+        setResults(cachedResults);
+        setSearched(true);
+        setSearching(false);
+      } else {
+        setResults([]);
+        setSearched(false);
+        handleSearch();
+      }
     }
-  }, [track.id]);
+  }, [track.id, cachedResults]);
 
   async function handleSearch() {
     setSearching(true);
@@ -306,8 +385,10 @@ function DetailPanel({ track, onDownloaded, onClose }: {
       });
       if (res.ok) {
         const data = await res.json();
-        const allResults: SoulseekResult[] = Array.isArray(data) ? data : data.results ?? [];
-        setResults(allResults.slice(0, 30));
+        const all: SoulseekResult[] = Array.isArray(data) ? data : data.results ?? [];
+        const trimmed = all.slice(0, 30);
+        setResults(trimmed);
+        onCacheResults(track.id, trimmed);
       } else {
         const data = await res.json();
         setError(data.error || "Search failed");
@@ -328,11 +409,7 @@ function DetailPanel({ track, onDownloaded, onClose }: {
       const res = await fetch("/api/soulseek/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          spotify_track_id: track.id,
-          username: result.username,
-          file: result.file,
-        }),
+        body: JSON.stringify({ spotify_track_id: track.id, username: result.username, file: result.file }),
       });
       if (res.ok) {
         setDownloaded(true);
@@ -354,126 +431,109 @@ function DetailPanel({ track, onDownloaded, onClose }: {
   }
 
   const flacResults = results.filter((r) => r.format === "flac");
-  const mp3Results = results.filter((r) => r.format !== "flac");
+  const otherResults = results.filter((r) => r.format !== "flac");
 
   return (
-    <Card className="bg-[#0F172A] border-[#334155] h-full flex flex-col">
-      <CardContent className="flex-1 flex flex-col py-4 space-y-4">
+    <div className="h-full flex flex-col">
+      <div className="flex-1 flex flex-col p-4 space-y-4 overflow-hidden">
         {/* Track header */}
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-4 shrink-0">
           {track.album_art_url ? (
-            <img src={track.album_art_url} alt="" className="w-20 h-20 rounded-lg object-cover shrink-0" />
+            <img src={track.album_art_url} alt="" className="w-16 h-16 rounded-lg object-cover shrink-0" />
           ) : (
-            <div className="w-20 h-20 rounded-lg bg-[#1E293B] flex items-center justify-center shrink-0">
-              <Music className="w-8 h-8 text-[#475569]" />
+            <div className="w-16 h-16 rounded-lg bg-[#1E293B] flex items-center justify-center shrink-0">
+              <Music className="w-7 h-7 text-[#475569]" />
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <h3 className="text-lg font-semibold text-[#F8FAFC] truncate">{track.title}</h3>
+            <h3 className="text-base font-semibold text-[#F8FAFC] truncate">{track.title}</h3>
             <p className="text-sm text-[#94A3B8]">{track.artist}</p>
             <p className="text-xs text-[#64748B]">{track.album}</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} className="shrink-0">
-            <X className="w-4 h-4" />
-          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose} className="shrink-0"><X className="w-4 h-4" /></Button>
         </div>
 
         {/* Spotify preview */}
         {track.spotify_id && (
           <iframe
             src={`https://open.spotify.com/embed/track/${track.spotify_id}?utm_source=generator&theme=0`}
-            width="100%"
-            height="80"
-            frameBorder="0"
+            width="100%" height="80" frameBorder="0"
             allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
-            loading="lazy"
-            className="rounded-lg shrink-0"
+            loading="lazy" className="rounded-lg shrink-0"
           />
         )}
 
-        {/* Downloaded state */}
+        {/* Status messages */}
         {downloaded && (
-          <div className="flex items-center gap-3 p-3 rounded-lg bg-[#22C55E]/10 border border-[#22C55E]/20">
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-[#22C55E]/10 border border-[#22C55E]/20 shrink-0">
             <Check className="w-5 h-5 text-[#22C55E]" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-[#22C55E]">Downloaded successfully</p>
-            </div>
-            <Link href="/downloads" className="text-xs text-[#22C55E] hover:underline flex items-center gap-1">
-              View <ExternalLink className="w-3 h-3" />
-            </Link>
+            <p className="text-sm font-medium text-[#22C55E] flex-1">Downloaded</p>
+            <Link href="/downloads" className="text-xs text-[#22C55E] hover:underline flex items-center gap-1">View <ExternalLink className="w-3 h-3" /></Link>
           </div>
         )}
-
-        {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 p-2 rounded bg-red-500/10 border border-red-500/20">
+          <div className="flex items-center gap-2 p-2 rounded bg-red-500/10 border border-red-500/20 shrink-0">
             <X className="w-4 h-4 text-red-400 shrink-0" />
             <p className="text-xs text-red-400 flex-1">{error}</p>
-            <Button variant="ghost" size="sm" className="text-xs text-red-400 h-6 px-2" onClick={handleSearch}>
-              Retry
-            </Button>
+            <Button variant="ghost" size="sm" className="text-xs text-red-400 h-6 px-2" onClick={handleSearch}>Retry</Button>
           </div>
         )}
 
-        {/* Search results */}
-        <div className="flex items-center justify-between">
+        {/* Results header */}
+        <div className="flex items-center justify-between shrink-0">
           <h4 className="text-xs font-semibold text-[#94A3B8] uppercase tracking-wider">
-            {searching ? "Searching Soulseek..." : searched ? `${results.length} results` : "Soulseek Results"}
+            {searching ? "Searching..." : searched ? `${results.length} results` : "Results"}
           </h4>
           {searched && !searching && (
-            <Button variant="ghost" size="sm" className="text-xs h-6 px-2 text-[#64748B]" onClick={handleSearch}>
-              Re-search
-            </Button>
+            <Button variant="ghost" size="sm" className="text-xs h-6 px-2 text-[#64748B]" onClick={handleSearch}>Re-search</Button>
           )}
         </div>
 
+        {/* Results list */}
         {searching ? (
           <div className="flex-1 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-6 h-6 text-[#22C55E] animate-spin" />
-            <p className="text-xs text-[#94A3B8]">Searching Soulseek network...</p>
+            <p className="text-xs text-[#94A3B8]">Searching Soulseek...</p>
             <div className="w-48 h-1 bg-[#1E293B] rounded-full overflow-hidden">
               <div className="h-full bg-[#22C55E] rounded-full animate-pulse w-full" />
             </div>
           </div>
         ) : (
-          <ScrollArea className="flex-1">
+          <ScrollArea className="flex-1 min-h-0">
             <div className="space-y-1 pr-2">
               {flacResults.length > 0 && (
                 <>
-                  <p className="text-[10px] text-[#64748B] uppercase tracking-wider mb-1 mt-2">FLAC (Lossless)</p>
+                  <p className="text-[10px] text-[#64748B] uppercase tracking-wider mb-1">FLAC (Lossless)</p>
                   {flacResults.map((r, i) => (
-                    <ResultRow key={`flac-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} />
+                    <ResultRow key={`f-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} />
                   ))}
                 </>
               )}
-              {mp3Results.length > 0 && (
+              {otherResults.length > 0 && (
                 <>
                   <p className="text-[10px] text-[#64748B] uppercase tracking-wider mb-1 mt-3">MP3 / Other</p>
-                  {mp3Results.map((r, i) => (
-                    <ResultRow key={`mp3-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} />
+                  {otherResults.map((r, i) => (
+                    <ResultRow key={`o-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} />
                   ))}
                 </>
               )}
               {searched && results.length === 0 && !error && (
-                <p className="text-xs text-[#64748B] text-center py-4">No results found on Soulseek</p>
+                <p className="text-xs text-[#64748B] text-center py-4">No results on Soulseek</p>
               )}
             </div>
           </ScrollArea>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
 function ResultRow({ result, downloading, onDownload, formatSize }: {
-  result: SoulseekResult;
-  downloading: string | null;
-  onDownload: (r: SoulseekResult) => void;
-  formatSize: (b: number) => string;
+  result: SoulseekResult; downloading: string | null;
+  onDownload: (r: SoulseekResult) => void; formatSize: (b: number) => string;
 }) {
   const isDownloading = downloading === result.file;
   const filename = result.file.split(/[\\/]/).pop() ?? result.file;
-
   return (
     <div className="flex items-center gap-2 p-2 rounded border border-[#1E293B] bg-[#020617] hover:border-[#334155] transition-colors">
       <div className="min-w-0 flex-1">
@@ -485,30 +545,14 @@ function ResultRow({ result, downloading, onDownload, formatSize }: {
           <span className="text-[#475569]">{result.username}</span>
         </div>
       </div>
-      <Button
-        size="sm"
-        className="text-[10px] h-7 px-3 shrink-0"
-        onClick={() => onDownload(result)}
-        disabled={downloading !== null}
-      >
+      <Button size="sm" className="text-[10px] h-7 px-3 shrink-0" onClick={() => onDownload(result)} disabled={downloading !== null}>
         {isDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Download"}
       </Button>
     </div>
   );
 }
 
-interface SpotifyTrack {
-  id: number;
-  spotify_id: string;
-  title: string | null;
-  artist: string | null;
-  album: string | null;
-  album_art_url: string | null;
-}
-
-function LikeSection({
-  tracks, allTracks, loading, searchFilter, onSearchChange,
-}: {
+function LikeSection({ tracks, allTracks, loading, searchFilter, onSearchChange }: {
   tracks: LocalTrack[]; allTracks: LocalTrack[]; loading: boolean;
   searchFilter: string; onSearchChange: (v: string) => void;
 }) {
@@ -573,7 +617,7 @@ function LikeSection({
           })}
         </div>
       )}
-      {tracks.length > 50 && <p className="text-xs text-[#64748B] text-center">Showing 50 of {tracks.length} — use search to filter</p>}
+      {tracks.length > 50 && <p className="text-xs text-[#64748B] text-center">Showing 50 — use search to filter</p>}
     </div>
   );
 }

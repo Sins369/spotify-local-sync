@@ -2,7 +2,7 @@ import type { SoulseekResult } from "@/types";
 
 const globalForSlsk = globalThis as unknown as { __slskClient: any };
 
-function getClient() { return globalForSlsk.__slskClient ?? null; }
+export function getClient() { return globalForSlsk.__slskClient ?? null; }
 function setClient(c: any) { globalForSlsk.__slskClient = c; }
 
 export async function connectSoulseek(username: string, password: string): Promise<void> {

@@ -9,7 +9,7 @@ async function getValidAccessToken(): Promise<string> {
   const accessToken = getSetting("spotify_access_token");
   const expiresAt = getSetting("spotify_token_expires_at");
   const refreshToken = getSetting("spotify_refresh_token");
-  const clientId = getSetting("spotify_client_id");
+  const clientId = process.env.SPOTIFY_CLIENT_ID || getSetting("spotify_client_id");
 
   if (!accessToken || !refreshToken || !clientId) {
     throw new Error("Spotify not connected");

@@ -4,16 +4,16 @@ import { getSetting, setSetting } from "@/lib/settings";
 
 export async function GET() {
   try {
-    const clientId = getSetting("spotify_client_id");
+    const clientId = process.env.SPOTIFY_CLIENT_ID || getSetting("spotify_client_id");
     if (!clientId) {
       return NextResponse.json(
-        { error: "Spotify client ID not configured" },
+        { error: "Spotify client ID not configured. Set SPOTIFY_CLIENT_ID in .env.local" },
         { status: 400 }
       );
     }
 
-    const redirectUri =
-      getSetting("spotify_redirect_uri") || "http://localhost:3000/api/spotify/callback";
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3002";
+    const redirectUri = getSetting("spotify_redirect_uri") || `${baseUrl}/api/spotify/callback`;
 
     const { url, codeVerifier } = await buildAuthUrl(clientId, redirectUri);
 

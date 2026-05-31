@@ -18,10 +18,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const clientId = getSetting("spotify_client_id");
+    const clientId = process.env.SPOTIFY_CLIENT_ID || getSetting("spotify_client_id");
     const codeVerifier = getSetting("spotify_code_verifier");
-    const redirectUri =
-      getSetting("spotify_redirect_uri") || "http://localhost:3000/api/spotify/callback";
+    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3002";
+    const redirectUri = getSetting("spotify_redirect_uri") || `${baseUrl}/api/spotify/callback`;
 
     if (!clientId || !codeVerifier) {
       return NextResponse.redirect(

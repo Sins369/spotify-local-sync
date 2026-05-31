@@ -12,45 +12,94 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { FolderPicker } from "@/components/settings/folder-picker";
+import { renderPath } from "@/lib/file-organizer";
 
 interface Settings {
-  spotify_connected: boolean;
-  music_source: string;
-  backup_dest: string;
-  trash_folder: string;
+  music_source_path: string;
+  backup_dest_path: string;
+  trash_path: string;
   file_template: string;
   soulseek_username: string;
   soulseek_password: string;
 }
 
+const DEFAULT_TEMPLATE = "{AlbumArtist}/{Album}/{TrackNo} {Title}.{ext}";
+
+const SAMPLE_TRACK = {
+  album_artist: "Pink Floyd",
+  artist: "Pink Floyd",
+  album: "The Dark Side of the Moon",
+  track_no: 3,
+  disc_no: 1,
+  title: "Time",
+  year: 1973,
+  ext: "flac",
+};
+
+type PickerField = "music_source_path" | "backup_dest_path" | "trash_path" | null;
+
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
-    spotify_connected: false,
-    music_source: "",
-    backup_dest: "",
-    trash_folder: "",
-    file_template: "",
+    music_source_path: "",
+    backup_dest_path: "",
+    trash_path: "",
+    file_template: DEFAULT_TEMPLATE,
     soulseek_username: "",
     soulseek_password: "",
   });
+  const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pickerField, setPickerField] = useState<PickerField>(null);
+  const [templatePreview, setTemplatePreview] = useState("");
 
   useEffect(() => {
     fetchSettings();
+    fetchSpotifyStatus();
   }, []);
+
+  useEffect(() => {
+    const template = settings.file_template || DEFAULT_TEMPLATE;
+    try {
+      const preview = renderPath(template, SAMPLE_TRACK);
+      setTemplatePreview(preview);
+    } catch {
+      setTemplatePreview("Invalid template");
+    }
+  }, [settings.file_template]);
 
   async function fetchSettings() {
     try {
       const res = await fetch("/api/settings");
       if (res.ok) {
         const data = await res.json();
-        setSettings(data);
+        setSettings((prev) => ({
+          ...prev,
+          music_source_path: data.music_source_path || "",
+          backup_dest_path: data.backup_dest_path || "",
+          trash_path: data.trash_path || "",
+          file_template: data.file_template || DEFAULT_TEMPLATE,
+          soulseek_username: data.soulseek_username || "",
+          soulseek_password: data.soulseek_password || "",
+        }));
       }
     } catch {
-      // Fetch failed
+      // fetch failed
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchSpotifyStatus() {
+    try {
+      const res = await fetch("/api/spotify/status");
+      if (res.ok) {
+        const data = await res.json();
+        setSpotifyConnected(data.connected);
+      }
+    } catch {
+      // fetch failed
     }
   }
 
@@ -63,7 +112,7 @@ export default function SettingsPage() {
         body: JSON.stringify(settings),
       });
     } catch {
-      // Save failed
+      // save failed
     } finally {
       setSaving(false);
     }
@@ -79,12 +128,19 @@ export default function SettingsPage() {
         }
       }
     } catch {
-      // Auth failed
+      // auth failed
     }
   }
 
   function updateField(field: keyof Settings, value: string) {
     setSettings((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleFolderSelect(path: string) {
+    if (pickerField) {
+      updateField(pickerField, path);
+    }
+    setPickerField(null);
   }
 
   if (loading) {
@@ -97,7 +153,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-2xl">
       <h2 className="text-2xl font-bold">Settings</h2>
 
       <Card>
@@ -108,15 +164,11 @@ export default function SettingsPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex items-center gap-4">
-          <Badge variant={settings.spotify_connected ? "default" : "secondary"}>
-            {settings.spotify_connected ? "Connected" : "Not Connected"}
+          <Badge variant={spotifyConnected ? "default" : "secondary"}>
+            {spotifyConnected ? "Connected" : "Not Connected"}
           </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSpotifyConnect}
-          >
-            {settings.spotify_connected ? "Reconnect" : "Connect"}
+          <Button variant="outline" size="sm" onClick={handleSpotifyConnect}>
+            {spotifyConnected ? "Reconnect" : "Connect"}
           </Button>
         </CardContent>
       </Card>
@@ -125,45 +177,76 @@ export default function SettingsPage() {
         <CardHeader>
           <CardTitle>Paths</CardTitle>
           <CardDescription>
-            Configure music source, backup, and trash directories
+            Click Browse to navigate and select folders
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="music_source">Music Source Directory</Label>
-            <Input
-              id="music_source"
-              value={settings.music_source}
-              onChange={(e) => updateField("music_source", e.target.value)}
-              placeholder="/path/to/music"
-            />
+            <Label>Music Source Directory</Label>
+            <div className="flex gap-2">
+              <Input
+                value={settings.music_source_path}
+                onChange={(e) => updateField("music_source_path", e.target.value)}
+                placeholder="Click Browse to select..."
+                readOnly
+              />
+              <Button
+                variant="outline"
+                onClick={() => setPickerField("music_source_path")}
+              >
+                Browse
+              </Button>
+            </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="backup_dest">Backup Destination</Label>
-            <Input
-              id="backup_dest"
-              value={settings.backup_dest}
-              onChange={(e) => updateField("backup_dest", e.target.value)}
-              placeholder="/path/to/backup"
-            />
+            <Label>Backup Destination</Label>
+            <div className="flex gap-2">
+              <Input
+                value={settings.backup_dest_path}
+                onChange={(e) => updateField("backup_dest_path", e.target.value)}
+                placeholder="Click Browse to select..."
+                readOnly
+              />
+              <Button
+                variant="outline"
+                onClick={() => setPickerField("backup_dest_path")}
+              >
+                Browse
+              </Button>
+            </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="trash_folder">Trash Folder</Label>
-            <Input
-              id="trash_folder"
-              value={settings.trash_folder}
-              onChange={(e) => updateField("trash_folder", e.target.value)}
-              placeholder="/path/to/trash"
-            />
+            <Label>Trash Folder</Label>
+            <div className="flex gap-2">
+              <Input
+                value={settings.trash_path}
+                onChange={(e) => updateField("trash_path", e.target.value)}
+                placeholder="Click Browse to select..."
+                readOnly
+              />
+              <Button
+                variant="outline"
+                onClick={() => setPickerField("trash_path")}
+              >
+                Browse
+              </Button>
+            </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="file_template">File Template</Label>
+            <Label>File Organization Template</Label>
             <Input
-              id="file_template"
               value={settings.file_template}
               onChange={(e) => updateField("file_template", e.target.value)}
-              placeholder="{artist}/{album}/{track} - {title}"
+              placeholder={DEFAULT_TEMPLATE}
             />
+            <p className="text-xs text-muted-foreground">
+              Variables: {"{AlbumArtist}"}, {"{Artist}"}, {"{Album}"}, {"{Title}"}, {"{TrackNo}"}, {"{DiscNo}"}, {"{Year}"}, {"{ext}"}
+            </p>
+            <div className="text-xs bg-muted rounded px-3 py-2 font-mono">
+              <span className="text-muted-foreground">Preview: </span>
+              {settings.backup_dest_path ? `${settings.backup_dest_path}\\` : ""}
+              {templatePreview}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -177,25 +260,19 @@ export default function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="slsk_user">Username</Label>
+            <Label>Username</Label>
             <Input
-              id="slsk_user"
               value={settings.soulseek_username}
-              onChange={(e) =>
-                updateField("soulseek_username", e.target.value)
-              }
+              onChange={(e) => updateField("soulseek_username", e.target.value)}
               placeholder="username"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="slsk_pass">Password</Label>
+            <Label>Password</Label>
             <Input
-              id="slsk_pass"
               type="password"
               value={settings.soulseek_password}
-              onChange={(e) =>
-                updateField("soulseek_password", e.target.value)
-              }
+              onChange={(e) => updateField("soulseek_password", e.target.value)}
               placeholder="password"
             />
           </div>
@@ -205,6 +282,13 @@ export default function SettingsPage() {
       <Button onClick={handleSave} disabled={saving}>
         {saving ? "Saving..." : "Save Settings"}
       </Button>
+
+      <FolderPicker
+        open={pickerField !== null}
+        onClose={() => setPickerField(null)}
+        onSelect={handleFolderSelect}
+        currentPath={pickerField ? settings[pickerField] : undefined}
+      />
     </div>
   );
 }

@@ -20,7 +20,7 @@ export default function DuplicatesPage() {
       const res = await fetch("/api/duplicates");
       if (res.ok) {
         const data = await res.json();
-        setGroups(data.groups ?? []);
+        setGroups(Array.isArray(data) ? data : data.groups ?? []);
       }
     } catch {
       // Fetch failed
@@ -39,7 +39,7 @@ export default function DuplicatesPage() {
       await fetch("/api/duplicates/resolve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ group_id: groupId, action, keep_id: keepId }),
+        body: JSON.stringify({ group_id: groupId, action, keeper_track_id: keepId }),
       });
       await fetchGroups();
     } catch {
@@ -52,31 +52,32 @@ export default function DuplicatesPage() {
   if (loading) {
     return (
       <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Duplicates</h2>
-        <p className="text-muted-foreground text-sm">Loading...</p>
+        <h2 className="text-2xl font-bold text-[#F8FAFC]">Duplicates</h2>
+        <p className="text-[#94A3B8] text-sm">Loading...</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 max-w-5xl">
       <div>
-        <h2 className="text-2xl font-bold">Duplicates</h2>
-        <p className="text-muted-foreground text-sm mt-1">
+        <h2 className="text-2xl font-bold text-[#F8FAFC]">Duplicates</h2>
+        <p className="text-[#94A3B8] text-sm mt-1">
           {groups.length} duplicate group{groups.length !== 1 ? "s" : ""} found
+          {groups.length > 0 &&
+            ` — ${groups.reduce((sum, g) => sum + g.members.length, 0)} total tracks`}
         </p>
       </div>
 
       {groups.length === 0 ? (
-        <p className="text-muted-foreground">
-          No duplicate groups found. Run &quot;Check for Duplicates&quot; from
-          the Dashboard.
+        <p className="text-[#64748B]">
+          No duplicate groups found. Run &quot;Check Duplicates&quot; from the Dashboard.
         </p>
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
           {groups.map((group) => (
             <DuplicateCard
-              key={group.group_id}
+              key={group.id}
               group={group}
               onResolve={handleResolve}
               resolving={resolving}

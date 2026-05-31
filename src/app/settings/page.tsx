@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Loader2, Trash2 } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -325,6 +326,8 @@ export default function SettingsPage() {
         {saving ? "Saving..." : "Save Settings"}
       </Button>
 
+      <CleanupSection />
+
       <FolderPicker
         open={pickerField !== null}
         onClose={() => setPickerField(null)}
@@ -332,5 +335,88 @@ export default function SettingsPage() {
         currentPath={pickerField ? settings[pickerField] : undefined}
       />
     </div>
+  );
+}
+
+function CleanupSection() {
+  const [status, setStatus] = useState<{ stale_records: number; empty_folders: number } | null>(null);
+  const [cleaning, setCleaning] = useState(false);
+  const [result, setResult] = useState<{ stale_records_removed: number; empty_folders_removed: number } | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/cleanup");
+      if (res.ok) setStatus(await res.json());
+    } catch {} finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchStatus(); }, [fetchStatus]);
+
+  async function runCleanup() {
+    setCleaning(true);
+    setResult(null);
+    try {
+      const res = await fetch("/api/cleanup", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        setResult(data);
+        await fetchStatus();
+      }
+    } catch {} finally {
+      setCleaning(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Trash2 className="w-4 h-4" />
+          Cleanup
+        </CardTitle>
+        <CardDescription>
+          Remove stale database records and empty folders from your music library
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {loading ? (
+          <p className="text-sm text-muted-foreground">Checking...</p>
+        ) : status && (status.stale_records > 0 || status.empty_folders > 0) ? (
+          <div className="space-y-2">
+            {status.stale_records > 0 && (
+              <p className="text-sm text-yellow-500">
+                {status.stale_records} stale record{status.stale_records !== 1 ? "s" : ""} (files no longer exist on disk)
+              </p>
+            )}
+            {status.empty_folders > 0 && (
+              <p className="text-sm text-yellow-500">
+                {status.empty_folders} empty folder{status.empty_folders !== 1 ? "s" : ""} in music library
+              </p>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm text-green-500">Everything is clean</p>
+        )}
+
+        {result && (
+          <p className="text-sm text-green-500">
+            Removed {result.stale_records_removed} stale record{result.stale_records_removed !== 1 ? "s" : ""} and {result.empty_folders_removed} empty folder{result.empty_folders_removed !== 1 ? "s" : ""}
+          </p>
+        )}
+
+        <Button
+          variant="outline"
+          onClick={runCleanup}
+          disabled={cleaning}
+          className="gap-2"
+        >
+          {cleaning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+          {cleaning ? "Cleaning..." : "Run Cleanup"}
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

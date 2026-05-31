@@ -251,14 +251,13 @@ export default function SyncPage() {
   );
 }
 
-function DownloadCard({ track }: { track: { id: number; title: string | null; artist: string | null; album: string | null; album_art_url?: string | null } }) {
+function DownloadCard({ track }: { track: { id: number; spotify_id?: string; title: string | null; artist: string | null; album: string | null; album_art_url?: string | null } }) {
   const [expanded, setExpanded] = useState(false);
   const [results, setResults] = useState<SoulseekResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
-  const [previewPlaying, setPreviewPlaying] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [showPreview, setShowPreview] = useState(false);
 
   async function handleSearch() {
     setExpanded(true);
@@ -296,20 +295,6 @@ function DownloadCard({ track }: { track: { id: number; title: string | null; ar
     }
   }
 
-  function togglePreview(url: string) {
-    if (previewPlaying === url) {
-      audioRef.current?.pause();
-      setPreviewPlaying(null);
-      return;
-    }
-    audioRef.current?.pause();
-    const audio = new Audio(url);
-    audio.onended = () => setPreviewPlaying(null);
-    audio.play();
-    audioRef.current = audio;
-    setPreviewPlaying(url);
-  }
-
   function formatSize(bytes: number): string {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -345,16 +330,41 @@ function DownloadCard({ track }: { track: { id: number; title: string | null; ar
             <p className="text-sm font-medium text-[#F8FAFC] truncate">{track.title ?? "Unknown"}</p>
             <p className="text-xs text-[#94A3B8] truncate">{track.artist ?? "Unknown"} — {track.album ?? ""}</p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="text-xs shrink-0 border-[#334155]"
-            onClick={expanded ? () => setExpanded(false) : handleSearch}
-            disabled={searching}
-          >
-            {searching ? <Loader2 className="w-3 h-3 animate-spin" /> : expanded ? "Close" : "Search"}
-          </Button>
+          <div className="flex gap-1 shrink-0">
+            {track.spotify_id && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs px-2"
+                onClick={() => setShowPreview(!showPreview)}
+                title="Preview on Spotify"
+              >
+                {showPreview ? <Pause className="w-3.5 h-3.5 text-[#22C55E]" /> : <Play className="w-3.5 h-3.5 text-[#94A3B8]" />}
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs border-[#334155]"
+              onClick={expanded ? () => setExpanded(false) : handleSearch}
+              disabled={searching}
+            >
+              {searching ? <Loader2 className="w-3 h-3 animate-spin" /> : expanded ? "Close" : "Search"}
+            </Button>
+          </div>
         </div>
+
+        {showPreview && track.spotify_id && (
+          <iframe
+            src={`https://open.spotify.com/embed/track/${track.spotify_id}?utm_source=generator&theme=0`}
+            width="100%"
+            height="80"
+            frameBorder="0"
+            allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
+            loading="lazy"
+            className="rounded-lg"
+          />
+        )}
 
         {expanded && (
           <div className="space-y-2">

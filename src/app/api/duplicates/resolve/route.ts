@@ -9,9 +9,25 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { group_id, keeper_track_id, action } = body;
 
-    if (!group_id || !keeper_track_id) {
+    if (!group_id) {
       return NextResponse.json(
-        { error: "group_id and keeper_track_id are required" },
+        { error: "group_id is required" },
+        { status: 400 }
+      );
+    }
+
+    // "keep_all" just marks resolved without moving anything
+    if (action === "keep_all") {
+      const db = getDb();
+      db.prepare(
+        "UPDATE duplicate_groups SET resolution = 'keep_all', resolved_at = datetime('now') WHERE id = ?"
+      ).run(group_id);
+      return NextResponse.json({ success: true, moved: 0 });
+    }
+
+    if (!keeper_track_id) {
+      return NextResponse.json(
+        { error: "keeper_track_id is required" },
         { status: 400 }
       );
     }
@@ -44,6 +60,7 @@ export async function POST(request: NextRequest) {
     }>;
 
     const trashDir =
+      getSetting("trash_path") ||
       getSetting("trash_folder") ||
       path.join(process.cwd(), "data", "trash");
 
@@ -64,26 +81,19 @@ export async function POST(request: NextRequest) {
       }
 
       // Move non-keeper files to trash
-      if (
-        action === "trash" ||
-        action === "move_to_trash" ||
-        !action
-      ) {
-        const destPath = path.join(trashDir, path.basename(member.path));
+      const destPath = path.join(trashDir, path.basename(member.path));
+      try {
+        if (fs.existsSync(member.path)) {
+          fs.renameSync(member.path, destPath);
+          moved++;
+        }
+      } catch {
         try {
-          if (fs.existsSync(member.path)) {
-            fs.renameSync(member.path, destPath);
-            moved++;
-          }
+          fs.copyFileSync(member.path, destPath);
+          fs.unlinkSync(member.path);
+          moved++;
         } catch {
-          // If rename fails (cross-device), try copy + delete
-          try {
-            fs.copyFileSync(member.path, destPath);
-            fs.unlinkSync(member.path);
-            moved++;
-          } catch {
-            // Skip files that can't be moved
-          }
+          // Skip files that can't be moved
         }
       }
     }

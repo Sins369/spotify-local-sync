@@ -49,16 +49,29 @@ export async function POST() {
 
     // Build lookup indexes for fast matching
     const isrcIndex = new Map<string, typeof spotifyTracks[0]>();
+    const exactIndex = new Map<string, typeof spotifyTracks[0][]>();
     const normalizedIndex = new Map<string, typeof spotifyTracks[0][]>();
 
     for (const st of spotifyTracks) {
       if (st.isrc) {
         isrcIndex.set(st.isrc.toUpperCase(), st);
       }
-      const key = `${normalizeTitle(st.title)}||${normalizeArtist(st.artist)}`;
-      if (!normalizedIndex.has(key)) {
-        normalizedIndex.set(key, []);
+      // Exact case-insensitive index
+      const exactKey = `${st.title.toLowerCase()}||${st.artist.toLowerCase()}`;
+      if (!exactIndex.has(exactKey)) exactIndex.set(exactKey, []);
+      exactIndex.get(exactKey)!.push(st);
+
+      // Also index by just first artist (before comma) for multi-artist tracks
+      const firstArtist = st.artist.split(",")[0].trim().toLowerCase();
+      const exactKeyFirstArtist = `${st.title.toLowerCase()}||${firstArtist}`;
+      if (exactKeyFirstArtist !== exactKey) {
+        if (!exactIndex.has(exactKeyFirstArtist)) exactIndex.set(exactKeyFirstArtist, []);
+        exactIndex.get(exactKeyFirstArtist)!.push(st);
       }
+
+      // Normalized index (strips feat, remastered, etc.)
+      const key = `${normalizeTitle(st.title)}||${normalizeArtist(st.artist)}`;
+      if (!normalizedIndex.has(key)) normalizedIndex.set(key, []);
       normalizedIndex.get(key)!.push(st);
     }
 
@@ -97,7 +110,25 @@ export async function POST() {
         }
       }
 
-      // Stage 2: Normalized title+artist lookup (instant, no API call)
+      // Stage 2: Exact case-insensitive title+artist match
+      const exactKey = `${localTrack.title.toLowerCase()}||${localTrack.artist.toLowerCase()}`;
+      const exactCandidates = exactIndex.get(exactKey);
+      if (exactCandidates && exactCandidates.length > 0) {
+        pendingMatches.push({
+          local_id: localTrack.id,
+          spotify_id: exactCandidates[0].id,
+          method: "search",
+          confidence: 0.98,
+          confirmed: 1,
+        });
+        matched++;
+        if (processed % 100 === 0) {
+          eventBus.emit("match:progress", { total, processed, matched, noMatch });
+        }
+        continue;
+      }
+
+      // Stage 3: Normalized title+artist lookup (strips feat, remastered, etc.)
       const localKey = `${normalizeTitle(localTrack.title)}||${normalizeArtist(localTrack.artist)}`;
       const candidates = normalizedIndex.get(localKey);
 
@@ -116,7 +147,7 @@ export async function POST() {
           }
         }
 
-        if (bestCandidate && bestScore >= 0.7) {
+        if (bestCandidate && bestScore >= 0.75) {
           const confidence = classifyConfidence(bestScore);
           pendingMatches.push({
             local_id: localTrack.id,
@@ -148,7 +179,7 @@ export async function POST() {
         }
       }
 
-      if (bestCandidate && bestScore >= 0.7) {
+      if (bestCandidate && bestScore >= 0.75) {
         const confidence = classifyConfidence(bestScore);
         pendingMatches.push({
           local_id: localTrack.id,

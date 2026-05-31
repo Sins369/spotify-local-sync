@@ -37,10 +37,18 @@ interface DownloadRecord {
   album: string | null;
   spotify_id: string | null;
   album_art_url: string | null;
+  file_size: number | null;
+  bytes_received: number | null;
+  percent: number | null;
+  speed: number | null;
+  queue_position: number | null;
+  format: string | null;
+  bitrate: number | null;
 }
 
 interface QueueStats {
   active: number;
+  queued: number;
   completed: number;
   failed: number;
   total: number;
@@ -48,7 +56,7 @@ interface QueueStats {
 
 export default function DownloadsPage() {
   const [downloads, setDownloads] = useState<DownloadRecord[]>([]);
-  const [stats, setStats] = useState<QueueStats>({ active: 0, completed: 0, failed: 0, total: 0 });
+  const [stats, setStats] = useState<QueueStats>({ active: 0, queued: 0, completed: 0, failed: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "active" | "completed" | "failed">("all");
 
@@ -58,7 +66,7 @@ export default function DownloadsPage() {
       if (res.ok) {
         const data = await res.json();
         setDownloads(data.downloads ?? []);
-        setStats(data.stats ?? { active: 0, completed: 0, failed: 0, total: 0 });
+        setStats(data.stats ?? { active: 0, queued: 0, completed: 0, failed: 0, total: 0 });
       }
     } catch {} finally {
       setLoading(false);
@@ -67,7 +75,7 @@ export default function DownloadsPage() {
 
   useEffect(() => {
     fetchDownloads();
-    const interval = setInterval(fetchDownloads, 3000);
+    const interval = setInterval(fetchDownloads, 2000);
     return () => clearInterval(interval);
   }, [fetchDownloads]);
 
@@ -87,6 +95,21 @@ export default function DownloadsPage() {
       body: JSON.stringify({ action: "remove", id }),
     });
     fetchDownloads();
+  }
+
+  async function handleCancel(id: number) {
+    await fetch("/api/soulseek/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ download_id: id }),
+    });
+    fetchDownloads();
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   }
 
   const filtered = downloads.filter((d) => {
@@ -149,9 +172,10 @@ export default function DownloadsPage() {
       </div>
 
       {/* Stats cards */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-5 gap-3">
         {[
           { label: "Active", value: stats.active, icon: Loader2, color: "#22C55E", filterKey: "active" as const, iconClass: "animate-spin" },
+          { label: "Queued", value: stats.queued, icon: Download, color: "#F59E0B", filterKey: "active" as const, iconClass: "" },
           { label: "Completed", value: stats.completed, icon: Check, color: "#22C55E", filterKey: "completed" as const, iconClass: "" },
           { label: "Failed", value: stats.failed, icon: X, color: "#EF4444", filterKey: "failed" as const, iconClass: "" },
           { label: "Total", value: stats.total, icon: Download, color: "#94A3B8", filterKey: "all" as const, iconClass: "" },
@@ -232,18 +256,45 @@ export default function DownloadsPage() {
                   )}
 
                   {/* Progress bar for active downloads */}
-                  {dl.status === "downloading" && (
-                    <div className="mt-2 w-full h-1 bg-[#1E293B] rounded-full overflow-hidden">
-                      <div className="h-full bg-[#22C55E] rounded-full animate-pulse w-full" />
+                  {(dl.status === "downloading" || dl.status === "tagging") && (
+                    <div className="mt-2 space-y-1">
+                      <div className="w-full h-1.5 bg-[#1E293B] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#22C55E] rounded-full transition-all duration-500"
+                          style={{ width: `${dl.percent ?? 0}%` }}
+                        />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-[#64748B]">
+                        <span>
+                          {dl.status === "tagging" ? "Writing tags..." :
+                            `${formatBytes(dl.bytes_received ?? 0)} / ${formatBytes(dl.file_size ?? 0)} — ${dl.percent ?? 0}%`}
+                        </span>
+                        {dl.speed && dl.status === "downloading" && <span>{formatBytes(dl.speed)}/s</span>}
+                      </div>
                     </div>
                   )}
                 </div>
 
                 {/* Status + actions */}
                 <div className="flex flex-col items-end gap-2 shrink-0">
+                  {dl.status === "queued" && (
+                    <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">
+                      Queued
+                    </Badge>
+                  )}
+                  {dl.status === "queued" && dl.queue_position && (
+                    <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">
+                      #{dl.queue_position} in queue
+                    </Badge>
+                  )}
                   {dl.status === "downloading" && (
                     <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">
                       <Loader2 className="w-3 h-3 animate-spin mr-1" />Downloading
+                    </Badge>
+                  )}
+                  {dl.status === "tagging" && (
+                    <Badge className="bg-[#A855F7]/20 text-[#A855F7] text-[10px]">
+                      <Loader2 className="w-3 h-3 animate-spin mr-1" />Tagging
                     </Badge>
                   )}
                   {dl.status === "complete" && (
@@ -268,6 +319,15 @@ export default function DownloadsPage() {
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
+                    )}
+                    {(dl.status === "queued" || dl.status === "downloading") && (
+                      <button
+                        onClick={() => handleCancel(dl.id)}
+                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-red-400 transition-colors"
+                        title="Cancel"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
                     )}
                     {(dl.status === "complete" || dl.status === "failed") && (
                       <button

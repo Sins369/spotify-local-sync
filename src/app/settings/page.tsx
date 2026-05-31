@@ -24,6 +24,7 @@ interface Settings {
   file_template: string;
   soulseek_username: string;
   soulseek_password: string;
+  max_concurrent_downloads: string;
 }
 
 const DEFAULT_TEMPLATE = "{AlbumArtist}/{Album}/{TrackNo} {Title}.{ext}";
@@ -51,6 +52,7 @@ export default function SettingsPage() {
     file_template: DEFAULT_TEMPLATE,
     soulseek_username: "",
     soulseek_password: "",
+    max_concurrent_downloads: "1",
   });
   const [spotifyConnected, setSpotifyConnected] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -92,6 +94,7 @@ export default function SettingsPage() {
           file_template: data.file_template || DEFAULT_TEMPLATE,
           soulseek_username: data.soulseek_username || "",
           soulseek_password: data.soulseek_password || "",
+          max_concurrent_downloads: data.max_concurrent_downloads || "1",
         }));
       }
     } catch {
@@ -339,6 +342,17 @@ export default function SettingsPage() {
               onChange={(e) => updateField("soulseek_password", e.target.value)}
               placeholder="password"
             />
+          </div>
+          <div className="space-y-2">
+            <Label>Max Concurrent Downloads</Label>
+            <Input
+              type="number"
+              min="1"
+              max="5"
+              value={settings.max_concurrent_downloads}
+              onChange={(e) => updateField("max_concurrent_downloads", e.target.value)}
+            />
+            <p className="text-[10px] text-[#64748B]">Number of simultaneous Soulseek downloads (1-5)</p>
           </div>
         </CardContent>
       </Card>

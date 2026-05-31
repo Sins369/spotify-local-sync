@@ -410,7 +410,14 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
       const res = await fetch("/api/soulseek/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ spotify_track_id: track.id, username: result.username, file: result.file }),
+        body: JSON.stringify({
+          spotify_track_id: track.id,
+          username: result.username,
+          file: result.file,
+          file_size: result.size,
+          format: result.format,
+          bitrate: result.bitrate,
+        }),
       });
       if (res.ok) {
         setDownloaded(true);

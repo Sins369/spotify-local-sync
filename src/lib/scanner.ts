@@ -101,7 +101,7 @@ export async function extractMetadata(filePath: string): Promise<TrackMetadata> 
     base.year = common.year ?? null;
     base.genre = common.genre?.[0] ?? null;
     base.duration_ms = format.duration != null ? Math.round(format.duration * 1000) : null;
-    base.isrc = (common as Record<string, unknown>).isrc as string ?? null;
+    base.isrc = (common as unknown as Record<string, unknown>).isrc as string ?? null;
     base.format = format.container ?? null;
     base.bitrate = format.bitrate != null ? Math.round(format.bitrate) : null;
     base.sample_rate = format.sampleRate ?? null;

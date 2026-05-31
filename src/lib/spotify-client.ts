@@ -2,10 +2,7 @@ const SPOTIFY_API = "https://api.spotify.com/v1";
 const PAGE_DELAY_MS = 200;
 const DEFAULT_RETRIES = 3;
 
-interface SpotifyHeaders {
-  Authorization: string;
-  "Content-Type": string;
-}
+type SpotifyHeaders = Record<string, string>;
 
 interface PaginatedResponse<T> {
   items: T[];

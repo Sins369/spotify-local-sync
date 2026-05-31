@@ -26,6 +26,21 @@ export function getDb(): Database.Database {
   // Create schema
   db.exec(schema);
 
+  // Migrations for existing tables
+  const hasFileSize = db.prepare("SELECT COUNT(*) as c FROM pragma_table_info('downloads') WHERE name = 'file_size'").get() as { c: number };
+  if (hasFileSize.c === 0) {
+    db.exec(`
+      ALTER TABLE downloads ADD COLUMN file_size INTEGER;
+      ALTER TABLE downloads ADD COLUMN bytes_received INTEGER DEFAULT 0;
+      ALTER TABLE downloads ADD COLUMN format TEXT;
+      ALTER TABLE downloads ADD COLUMN bitrate INTEGER;
+      ALTER TABLE downloads ADD COLUMN source_file TEXT;
+    `);
+  }
+
+  // Reset any downloads stuck in 'downloading' state (server restart recovery)
+  db.prepare("UPDATE downloads SET status = 'queued' WHERE status = 'downloading'").run();
+
   return db;
 }
 

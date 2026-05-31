@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { getActiveProgress } from "@/lib/soulseek-download";
 
 export async function GET() {
   try {
     const db = getDb();
+    const progress = getActiveProgress();
 
     const downloads = db
       .prepare(
@@ -13,32 +15,50 @@ export async function GET() {
          ORDER BY
            CASE d.status
              WHEN 'downloading' THEN 0
-             WHEN 'queued' THEN 1
-             WHEN 'failed' THEN 2
-             WHEN 'complete' THEN 3
-             ELSE 4
+             WHEN 'tagging' THEN 1
+             WHEN 'queued' THEN 2
+             WHEN 'failed' THEN 3
+             WHEN 'complete' THEN 4
+             ELSE 5
            END,
            d.created_at DESC
          LIMIT 200`
       )
-      .all();
+      .all() as Array<Record<string, unknown>>;
+
+    for (const dl of downloads) {
+      const p = progress.get(dl.id as number);
+      if (p) {
+        dl.bytes_received = p.bytesReceived;
+        dl.percent = p.percent;
+        dl.speed = p.speed;
+      }
+    }
+
+    let queuePosition = 1;
+    for (const dl of downloads) {
+      if (dl.status === "queued") {
+        dl.queue_position = queuePosition++;
+      }
+    }
 
     const stats = db
       .prepare(
         `SELECT
-           SUM(CASE WHEN status = 'downloading' THEN 1 ELSE 0 END) as active,
+           SUM(CASE WHEN status = 'downloading' OR status = 'tagging' THEN 1 ELSE 0 END) as active,
+           SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) as queued,
            SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as completed,
            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,
            COUNT(*) as total
          FROM downloads`
       )
-      .get() as { active: number; completed: number; failed: number; total: number };
+      .get() as { active: number; queued: number; completed: number; failed: number; total: number };
 
     return NextResponse.json({ downloads, stats });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to get queue" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }
@@ -72,7 +92,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed" },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

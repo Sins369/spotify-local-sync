@@ -21,9 +21,9 @@ export default function RootLayout({
     <html lang="en" className="dark" suppressHydrationWarning>
       <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider attribute="class" defaultTheme="dark" forcedTheme="dark" disableTransitionOnChange>
-          <div className="flex min-h-screen">
+          <div className="flex min-h-screen bg-[#020617]">
             <Sidebar />
-            <main className="flex-1 p-8">{children}</main>
+            <main className="flex-1 p-8 overflow-auto">{children}</main>
           </div>
           <Toaster />
         </ThemeProvider>

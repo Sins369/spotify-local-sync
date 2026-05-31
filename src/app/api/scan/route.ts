@@ -23,8 +23,10 @@ export async function POST() {
 
   scanInProgress = true;
   try {
-    const result = await scanLibrary(sourcePath, getDb());
-    return NextResponse.json(result);
+    await scanLibrary(sourcePath, getDb());
+    const db = getDb();
+    const count = (db.prepare("SELECT COUNT(*) as count FROM local_tracks").get() as { count: number }).count;
+    return NextResponse.json({ success: true, total_tracks: count });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Scan failed" },

@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<ScanStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionProgress, setActionProgress] = useState<Record<string, { current: number; total: number }>>({});
   const [activities, setActivities] = useState<ActivityItem[]>([]);
 
   const fetchStats = useCallback(async () => {
@@ -63,24 +64,42 @@ export default function DashboardPage() {
 
   async function handleAction(action: string) {
     setActionLoading(action);
+    setActionProgress((prev) => ({ ...prev, [action]: { current: 0, total: 0 } }));
     try {
       let detail = "";
       if (action === "scan") {
+        const eventSource = new EventSource("/api/scan/progress");
+        eventSource.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            setActionProgress((prev) => ({
+              ...prev,
+              scan: { current: data.scanned ?? 0, total: data.total ?? 0 },
+            }));
+          } catch {}
+        };
         const res = await fetch("/api/scan", { method: "POST" });
+        eventSource.close();
         const data = await res.json();
-        detail = `Scanned ${data.total ?? 0} files`;
+        detail = `Scanned ${data.total_tracks ?? 0} files`;
       } else if (action === "sync") {
+        setActionProgress((prev) => ({ ...prev, sync: { current: 0, total: 1 } }));
         const res = await fetch("/api/spotify/sync", { method: "POST" });
         const data = await res.json();
-        detail = `Synced ${data.total ?? data.count ?? 0} tracks`;
+        setActionProgress((prev) => ({ ...prev, sync: { current: 1, total: 1 } }));
+        detail = `Synced ${data.synced ?? data.total ?? 0} tracks`;
       } else if (action === "match") {
+        setActionProgress((prev) => ({ ...prev, match: { current: 0, total: 1 } }));
         const res = await fetch("/api/match/run", { method: "POST" });
         const data = await res.json();
+        setActionProgress((prev) => ({ ...prev, match: { current: 1, total: 1 } }));
         detail = `Matched ${data.matched ?? 0} of ${data.total ?? 0} tracks`;
       } else if (action === "duplicates") {
+        setActionProgress((prev) => ({ ...prev, duplicates: { current: 0, total: 1 } }));
         const res = await fetch("/api/duplicates", { method: "POST" });
         const data = await res.json();
-        detail = `Found ${data.groups ?? 0} duplicate groups`;
+        setActionProgress((prev) => ({ ...prev, duplicates: { current: 1, total: 1 } }));
+        detail = `Found ${data.groups_found ?? 0} duplicate groups`;
       }
       setActivities((prev) => [
         {
@@ -102,6 +121,11 @@ export default function DashboardPage() {
       ]);
     } finally {
       setActionLoading(null);
+      setActionProgress((prev) => {
+        const next = { ...prev };
+        delete next[action];
+        return next;
+      });
     }
   }
 
@@ -328,6 +352,24 @@ export default function DashboardPage() {
                 <p className="text-xs text-[#64748B] leading-relaxed">
                   {action.description}
                 </p>
+                {isThisLoading && actionProgress[action.id] && (
+                  <div className="mt-3 space-y-1">
+                    <div className="w-full h-1.5 bg-[#1E293B] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#22C55E] rounded-full transition-all duration-300"
+                        style={{
+                          width: `${actionProgress[action.id].total > 0
+                            ? Math.round((actionProgress[action.id].current / actionProgress[action.id].total) * 100)
+                            : 0}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="text-[10px] text-[#64748B] tabular-nums">
+                      {actionProgress[action.id].current.toLocaleString()}
+                      {actionProgress[action.id].total > 0 && ` / ${actionProgress[action.id].total.toLocaleString()}`}
+                    </p>
+                  </div>
+                )}
               </button>
             );
           })}

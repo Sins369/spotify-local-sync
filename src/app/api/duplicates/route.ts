@@ -78,7 +78,26 @@ export async function POST() {
       .prepare("SELECT * FROM local_tracks")
       .all() as LocalTrack[];
 
-    const duplicateGroups = findDuplicateGroups(allTracks);
+    // Load ignored pairs
+    const ignoredPairs = new Set(
+      (db.prepare("SELECT track_id_a, track_id_b FROM duplicate_ignores").all() as Array<{ track_id_a: number; track_id_b: number }>)
+        .map((r) => `${r.track_id_a}:${r.track_id_b}`)
+    );
+
+    const rawGroups = findDuplicateGroups(allTracks);
+
+    // Filter out groups where all members are in ignored pairs
+    const duplicateGroups = rawGroups.filter((group) => {
+      const memberIds = group.members.map((m) => m.id);
+      for (let i = 0; i < memberIds.length; i++) {
+        for (let j = i + 1; j < memberIds.length; j++) {
+          const a = Math.min(memberIds[i], memberIds[j]);
+          const b = Math.max(memberIds[i], memberIds[j]);
+          if (!ignoredPairs.has(`${a}:${b}`)) return true;
+        }
+      }
+      return false;
+    });
 
     // Clear existing unresolved groups
     const unresolvedIds = db

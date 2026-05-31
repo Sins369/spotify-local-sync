@@ -25,6 +25,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, moved: 0 });
     }
 
+    // "ignore" marks as not duplicates and stores pairs so they won't be re-detected
+    if (action === "ignore") {
+      const db = getDb();
+      const members = db
+        .prepare("SELECT local_track_id FROM duplicate_members WHERE group_id = ?")
+        .all(group_id) as Array<{ local_track_id: number }>;
+
+      const insertIgnore = db.prepare(
+        "INSERT OR IGNORE INTO duplicate_ignores (track_id_a, track_id_b) VALUES (?, ?)"
+      );
+      db.transaction(() => {
+        for (let i = 0; i < members.length; i++) {
+          for (let j = i + 1; j < members.length; j++) {
+            const a = Math.min(members[i].local_track_id, members[j].local_track_id);
+            const b = Math.max(members[i].local_track_id, members[j].local_track_id);
+            insertIgnore.run(a, b);
+          }
+        }
+      })();
+
+      db.prepare(
+        "UPDATE duplicate_groups SET resolution = 'ignored', resolved_at = datetime('now') WHERE id = ?"
+      ).run(group_id);
+      return NextResponse.json({ success: true, ignored: members.length });
+    }
+
     if (!keeper_track_id) {
       return NextResponse.json(
         { error: "keeper_track_id is required" },

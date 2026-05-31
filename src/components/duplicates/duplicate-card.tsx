@@ -200,6 +200,15 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
           >
             Keep All
           </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-yellow-400 hover:text-yellow-300"
+            disabled={resolving}
+            onClick={() => handleResolveAndStop(group.id, "ignore")}
+          >
+            Not Duplicates
+          </Button>
         </div>
       </CardContent>
     </Card>

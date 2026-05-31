@@ -106,6 +106,14 @@ const schema = `
     FOREIGN KEY (local_track_id) REFERENCES local_tracks(id)
   );
 
+  CREATE TABLE IF NOT EXISTS duplicate_ignores (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    track_id_a INTEGER NOT NULL,
+    track_id_b INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(track_id_a, track_id_b)
+  );
+
   CREATE TABLE IF NOT EXISTS downloads (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     spotify_track_id INTEGER NOT NULL,

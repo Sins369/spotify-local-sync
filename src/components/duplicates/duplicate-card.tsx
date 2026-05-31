@@ -62,16 +62,21 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
   const title = sorted[0]?.title ?? "Unknown";
   const artist = sorted[0]?.artist ?? "Unknown";
 
+  function stopPlayback() {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    setPlayingId(null);
+  }
+
   function togglePlay(member: DuplicateMember) {
     if (playingId === member.id) {
-      audioRef.current?.pause();
-      setPlayingId(null);
+      stopPlayback();
       return;
     }
 
-    if (audioRef.current) {
-      audioRef.current.pause();
-    }
+    stopPlayback();
 
     const audio = new Audio(`/api/preview?path=${encodeURIComponent(member.path)}`);
     audio.onended = () => setPlayingId(null);
@@ -79,6 +84,11 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
     audio.play();
     audioRef.current = audio;
     setPlayingId(member.id);
+  }
+
+  function handleResolveAndStop(groupId: number, action: string, keepId?: number) {
+    stopPlayback();
+    onResolve(groupId, action, keepId);
   }
 
   return (
@@ -145,7 +155,7 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
                 size="sm"
                 className="text-xs shrink-0"
                 disabled={resolving}
-                onClick={() => onResolve(group.id, "keep_one", member.local_track_id)}
+                onClick={() => handleResolveAndStop(group.id, "keep_one", member.local_track_id)}
               >
                 Keep
               </Button>
@@ -158,7 +168,7 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
             size="sm"
             className="text-xs"
             disabled={resolving}
-            onClick={() => onResolve(group.id, "keep_one", bestId)}
+            onClick={() => handleResolveAndStop(group.id, "keep_one", bestId)}
           >
             Keep Best
           </Button>
@@ -167,7 +177,7 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
             size="sm"
             className="text-xs"
             disabled={resolving}
-            onClick={() => onResolve(group.id, "keep_all")}
+            onClick={() => handleResolveAndStop(group.id, "keep_all")}
           >
             Keep All
           </Button>

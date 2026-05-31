@@ -62,6 +62,13 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
   const title = sorted[0]?.title ?? "Unknown";
   const artist = sorted[0]?.artist ?? "Unknown";
 
+  const titlesMatch = sorted.every((m) => m.title?.toLowerCase() === sorted[0]?.title?.toLowerCase());
+  const albumsMatch = sorted.every((m) => m.album?.toLowerCase() === sorted[0]?.album?.toLowerCase());
+  const sizeDiff = sorted.length >= 2
+    ? Math.abs((sorted[0].size_bytes ?? 0) - (sorted[sorted.length - 1].size_bytes ?? 0))
+    : 0;
+  const maybeNotDuplicate = !titlesMatch || (!albumsMatch && sizeDiff > 5 * 1024 * 1024);
+
   function stopPlayback() {
     if (audioRef.current) {
       audioRef.current.pause();
@@ -94,9 +101,21 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
   return (
     <Card className="bg-[#0F172A] border-[#334155]">
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-[#F8FAFC]">
-          {title} <span className="text-[#94A3B8] font-normal">by {artist}</span>
-        </CardTitle>
+        <div className="flex items-center gap-2">
+          <CardTitle className="text-sm text-[#F8FAFC]">
+            {title} <span className="text-[#94A3B8] font-normal">by {artist}</span>
+          </CardTitle>
+          {maybeNotDuplicate && (
+            <Badge className="bg-yellow-500/20 text-yellow-400 text-[10px] px-1.5 py-0 shrink-0">
+              Review
+            </Badge>
+          )}
+        </div>
+        {maybeNotDuplicate && (
+          <p className="text-[10px] text-yellow-500/70 mt-1">
+            {!titlesMatch ? "Titles differ — may be different tracks" : "Different albums with different file sizes"}
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-2">
         {sorted.map((member) => {
@@ -127,7 +146,7 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
               <div className="min-w-0 flex-1 space-y-1">
                 <div className="flex items-center gap-2">
                   <p className="text-xs text-[#F8FAFC] truncate">
-                    {member.album ?? "Unknown Album"}
+                    {!titlesMatch && member.title ? member.title : member.album ?? "Unknown Album"}
                   </p>
                   {isBest && (
                     <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px] px-1.5 py-0 shrink-0">

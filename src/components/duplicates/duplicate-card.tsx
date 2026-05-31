@@ -70,8 +70,12 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
   const maybeNotDuplicate = !titlesMatch || (!albumsMatch && sizeDiff > 5 * 1024 * 1024);
 
   function stopPlayback() {
-    if (audioRef.current) {
-      audioRef.current.pause();
+    const current = audioRef.current;
+    if (current) {
+      current.onended = null;
+      current.onerror = null;
+      current.pause();
+      current.src = "";
       audioRef.current = null;
     }
     setPlayingId(null);
@@ -85,12 +89,16 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
 
     stopPlayback();
 
-    const audio = new Audio(`/api/preview?path=${encodeURIComponent(member.path)}`);
+    const audio = new Audio();
     audio.onended = () => setPlayingId(null);
     audio.onerror = () => setPlayingId(null);
-    audio.play();
+    audio.src = `/api/preview?path=${encodeURIComponent(member.path)}`;
     audioRef.current = audio;
     setPlayingId(member.id);
+
+    audio.addEventListener("canplay", () => {
+      audio.play().catch(() => {});
+    }, { once: true });
   }
 
   function handleResolveAndStop(groupId: number, action: string, keepId?: number) {

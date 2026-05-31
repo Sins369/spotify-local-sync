@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -310,6 +311,21 @@ function DownloadCard({ track }: { track: { id: number; spotify_id?: string; tit
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
 
+  if (downloading) {
+    return (
+      <Card className="bg-[#0F172A] border-[#22C55E]/30">
+        <CardContent className="flex items-center gap-3 py-4">
+          <Loader2 className="w-5 h-5 text-[#22C55E] animate-spin" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-[#F8FAFC] truncate">{track.title}</p>
+            <p className="text-xs text-[#94A3B8]">{track.artist}</p>
+          </div>
+          <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">Downloading...</Badge>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (downloaded) {
     return (
       <Card className="bg-[#0F172A] border-[#22C55E]/30">
@@ -319,7 +335,9 @@ function DownloadCard({ track }: { track: { id: number; spotify_id?: string; tit
             <p className="text-sm font-medium text-[#F8FAFC] truncate">{track.title}</p>
             <p className="text-xs text-[#94A3B8]">{track.artist}</p>
           </div>
-          <Badge className="bg-[#22C55E]/20 text-[#22C55E]">Downloaded</Badge>
+          <Link href="/downloads" className="text-xs text-[#22C55E] hover:underline">
+            View in Downloads
+          </Link>
         </CardContent>
       </Card>
     );

@@ -18,6 +18,7 @@ import { renderPath } from "@/lib/file-organizer";
 
 interface Settings {
   music_source_path: string;
+  download_path: string;
   backup_dest_path: string;
   trash_path: string;
   file_template: string;
@@ -39,11 +40,12 @@ const SAMPLE_TRACK = {
   ext: "flac",
 };
 
-type PickerField = "music_source_path" | "backup_dest_path" | "trash_path" | null;
+type PickerField = "music_source_path" | "download_path" | "backup_dest_path" | "trash_path" | null;
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<Settings>({
     music_source_path: "",
+    download_path: "",
     backup_dest_path: "",
     trash_path: "",
     file_template: DEFAULT_TEMPLATE,
@@ -84,6 +86,7 @@ export default function SettingsPage() {
         setSettings((prev) => ({
           ...prev,
           music_source_path: data.music_source_path || "",
+          download_path: data.download_path || "",
           backup_dest_path: data.backup_dest_path || "",
           trash_path: data.trash_path || "",
           file_template: data.file_template || DEFAULT_TEMPLATE,
@@ -204,6 +207,24 @@ export default function SettingsPage() {
                 Browse
               </Button>
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Download Location</Label>
+            <div className="flex gap-2">
+              <Input
+                value={settings.download_path}
+                onChange={(e) => updateField("download_path", e.target.value)}
+                placeholder="Click Browse to select..."
+                readOnly
+              />
+              <Button
+                variant="outline"
+                onClick={() => setPickerField("download_path")}
+              >
+                Browse
+              </Button>
+            </div>
+            <p className="text-[10px] text-[#64748B]">Where Soulseek downloads are saved</p>
           </div>
           <div className="space-y-2">
             <Label>Backup Destination</Label>

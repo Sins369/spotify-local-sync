@@ -146,7 +146,7 @@ export function DuplicateCard({ group, onResolve, resolving }: DuplicateCardProp
                   {member.duration_ms && <span>{formatDuration(member.duration_ms)}</span>}
                 </div>
                 <p className="text-[10px] font-mono text-[#475569] truncate" title={member.path}>
-                  {member.path.split(/[\\/]/).slice(-3, -1).join("/")}
+                  {member.path.split(/[\\/]/).slice(-4, -1).join("/")}
                 </p>
               </div>
 

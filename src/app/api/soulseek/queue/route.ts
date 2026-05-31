@@ -9,7 +9,7 @@ export async function GET() {
 
     const downloads = db
       .prepare(
-        `SELECT d.*, st.title, st.artist, st.album, st.spotify_id, st.album_art_url
+        `SELECT d.*, st.title, st.artist, st.album, st.spotify_id
          FROM downloads d
          JOIN spotify_tracks st ON d.spotify_track_id = st.id
          ORDER BY

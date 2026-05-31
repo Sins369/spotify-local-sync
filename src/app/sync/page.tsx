@@ -9,7 +9,6 @@ import {
   Card,
   CardContent,
 } from "@/components/ui/card";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Download,
   Heart,
@@ -147,6 +146,8 @@ export default function SyncPage() {
             return next;
           });
         }
+        // Delay between preload searches to avoid Soulseek rate limiting
+        if (!cancelled) await new Promise((r) => setTimeout(r, 2000));
       }
     }
 

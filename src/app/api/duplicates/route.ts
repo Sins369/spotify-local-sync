@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import fs from "fs";
 import { getDb } from "@/lib/db";
 import {
   findDuplicateGroups,
@@ -56,7 +57,23 @@ export async function POST() {
   try {
     const db = getDb();
 
-    // Get all local tracks
+    // Remove stale records (files moved to trash or deleted)
+    const allRecords = db.prepare("SELECT id, path FROM local_tracks").all() as Array<{ id: number; path: string }>;
+    const staleIds = allRecords.filter((r) => !fs.existsSync(r.path)).map((r) => r.id);
+    if (staleIds.length > 0) {
+      const deleteTrack = db.prepare("DELETE FROM local_tracks WHERE id = ?");
+      const deleteMatch = db.prepare("DELETE FROM matches WHERE local_track_id = ?");
+      const deleteDupMember = db.prepare("DELETE FROM duplicate_members WHERE local_track_id = ?");
+      db.transaction(() => {
+        for (const id of staleIds) {
+          deleteMatch.run(id);
+          deleteDupMember.run(id);
+          deleteTrack.run(id);
+        }
+      })();
+    }
+
+    // Get all local tracks (now clean)
     const allTracks = db
       .prepare("SELECT * FROM local_tracks")
       .all() as LocalTrack[];

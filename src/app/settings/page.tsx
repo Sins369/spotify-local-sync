@@ -53,6 +53,11 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [pickerField, setPickerField] = useState<PickerField>(null);
   const [templatePreview, setTemplatePreview] = useState("");
+  const [detecting, setDetecting] = useState(false);
+  const [detectedInfo, setDetectedInfo] = useState<{
+    description: string;
+    samples: string[];
+  } | null>(null);
 
   useEffect(() => {
     fetchSettings();
@@ -234,14 +239,50 @@ export default function SettingsPage() {
           </div>
           <div className="space-y-2">
             <Label>File Organization Template</Label>
-            <Input
-              value={settings.file_template}
-              onChange={(e) => updateField("file_template", e.target.value)}
-              placeholder={DEFAULT_TEMPLATE}
-            />
+            <div className="flex gap-2">
+              <Input
+                value={settings.file_template}
+                onChange={(e) => updateField("file_template", e.target.value)}
+                placeholder={DEFAULT_TEMPLATE}
+              />
+              <Button
+                variant="outline"
+                onClick={async () => {
+                  setDetecting(true);
+                  setDetectedInfo(null);
+                  try {
+                    const res = await fetch("/api/detect-template");
+                    if (res.ok) {
+                      const data = await res.json();
+                      updateField("file_template", data.detected_template);
+                      setDetectedInfo({
+                        description: data.pattern_description,
+                        samples: data.samples,
+                      });
+                    }
+                  } catch {
+                    // detection failed
+                  } finally {
+                    setDetecting(false);
+                  }
+                }}
+                disabled={detecting || !settings.music_source_path}
+              >
+                {detecting ? "Detecting..." : "Detect"}
+              </Button>
+            </div>
             <p className="text-xs text-muted-foreground">
               Variables: {"{AlbumArtist}"}, {"{Artist}"}, {"{Album}"}, {"{Title}"}, {"{TrackNo}"}, {"{DiscNo}"}, {"{Year}"}, {"{ext}"}
             </p>
+            {detectedInfo && (
+              <div className="text-xs border rounded px-3 py-2 space-y-1">
+                <p className="font-medium text-green-500">Detected: {detectedInfo.description}</p>
+                <p className="text-muted-foreground">Sample files from your library:</p>
+                {detectedInfo.samples.map((s, i) => (
+                  <p key={i} className="font-mono text-muted-foreground truncate">{s}</p>
+                ))}
+              </div>
+            )}
             <div className="text-xs bg-muted rounded px-3 py-2 font-mono">
               <span className="text-muted-foreground">Preview: </span>
               {settings.backup_dest_path ? `${settings.backup_dest_path}\\` : ""}

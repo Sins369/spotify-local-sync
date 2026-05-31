@@ -246,91 +246,109 @@ export default function DashboardPage() {
         })}
       </div>
 
-      {/* Middle Section: Match Ring + Library Overlap */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Match Status Ring */}
-        <Card className="bg-[#0F172A] border-[#334155]">
-          <CardHeader>
-            <CardTitle className="text-[#F8FAFC] text-base">Match Status</CardTitle>
-            <CardDescription className="text-[#94A3B8]">
-              How much of your local library is matched to Spotify
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center justify-center py-6">
-            <div className="relative w-44 h-44">
-              {/* Ring chart using conic-gradient */}
-              <div
-                className="w-full h-full rounded-full"
-                style={{
-                  background: loading
-                    ? "#1E293B"
-                    : `conic-gradient(#22C55E ${matchPercent * 3.6}deg, #334155 ${matchPercent * 3.6}deg)`,
-                }}
-              />
-              {/* Inner circle for donut effect */}
-              <div className="absolute inset-4 rounded-full bg-[#0F172A] flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold text-[#F8FAFC]">
-                  {loading ? "-" : `${matchPercent}%`}
-                </span>
-                <span className="text-xs text-[#94A3B8]">matched</span>
-              </div>
-            </div>
-            <div className="ml-8 space-y-3">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#22C55E]" />
-                <span className="text-sm text-[#94A3B8]">
-                  Matched: {loading ? "-" : matchedCount.toLocaleString()}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-[#334155]" />
-                <span className="text-sm text-[#94A3B8]">
-                  Unmatched: {loading ? "-" : unmatchedCount.toLocaleString()}
-                </span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+      {/* Library Overlap */}
+      <Card className="bg-[#0F172A] border-[#334155]">
+        <CardHeader>
+          <CardTitle className="text-[#F8FAFC] text-base">Library Overlap</CardTitle>
+          <CardDescription className="text-[#94A3B8]">
+            How your local collection and Spotify likes overlap
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* Stacked bar */}
+          {(() => {
+            const localOnly = localCount - matchedCount;
+            const spotifyOnly = spotifyCount - matchedCount;
+            const totalUnique = localOnly + matchedCount + spotifyOnly;
+            const localOnlyPct = totalUnique > 0 ? (localOnly / totalUnique) * 100 : 0;
+            const matchedPct = totalUnique > 0 ? (matchedCount / totalUnique) * 100 : 0;
+            const spotifyOnlyPct = totalUnique > 0 ? (spotifyOnly / totalUnique) * 100 : 0;
+            const spotifyMatchPct = spotifyCount > 0 ? Math.round((matchedCount / spotifyCount) * 100) : 0;
 
-        {/* Library Overlap Visualization */}
-        <Card className="bg-[#0F172A] border-[#334155]">
-          <CardHeader>
-            <CardTitle className="text-[#F8FAFC] text-base">Library Overlap</CardTitle>
-            <CardDescription className="text-[#94A3B8]">
-              Intersection between your local and Spotify libraries
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="flex items-center justify-center py-6">
-            <div className="relative w-72 h-44 flex items-center justify-center">
-              {/* Local circle */}
-              <div className="absolute left-2 w-36 h-36 rounded-full border-2 border-[#3B82F6] bg-[#3B82F6]/10 flex items-center justify-center">
-                <div className="text-center -ml-6">
-                  <p className="text-lg font-bold text-[#3B82F6]">
-                    {loading ? "-" : (localCount - matchedCount).toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-[#94A3B8]">Local only</p>
+            return (
+              <>
+                {/* Bar */}
+                <div className="w-full h-8 rounded-full overflow-hidden flex bg-[#1E293B]">
+                  <div
+                    className="h-full bg-[#3B82F6] transition-all duration-500 flex items-center justify-center"
+                    style={{ width: `${localOnlyPct}%` }}
+                  >
+                    {localOnlyPct > 8 && (
+                      <span className="text-[10px] font-semibold text-white">{localOnly.toLocaleString()}</span>
+                    )}
+                  </div>
+                  <div
+                    className="h-full bg-[#A855F7] transition-all duration-500 flex items-center justify-center"
+                    style={{ width: `${matchedPct}%` }}
+                  >
+                    {matchedPct > 8 && (
+                      <span className="text-[10px] font-semibold text-white">{matchedCount.toLocaleString()}</span>
+                    )}
+                  </div>
+                  <div
+                    className="h-full bg-[#22C55E] transition-all duration-500 flex items-center justify-center"
+                    style={{ width: `${spotifyOnlyPct}%` }}
+                  >
+                    {spotifyOnlyPct > 8 && (
+                      <span className="text-[10px] font-semibold text-white">{spotifyOnly.toLocaleString()}</span>
+                    )}
+                  </div>
                 </div>
-              </div>
-              {/* Spotify circle */}
-              <div className="absolute right-2 w-36 h-36 rounded-full border-2 border-[#22C55E] bg-[#22C55E]/10 flex items-center justify-center">
-                <div className="text-center ml-6">
-                  <p className="text-lg font-bold text-[#22C55E]">
-                    {loading ? "-" : (spotifyCount - matchedCount).toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-[#94A3B8]">Spotify only</p>
+
+                {/* Legend + Stats */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <div className="w-3 h-3 rounded-full bg-[#3B82F6]" />
+                      <span className="text-xs text-[#94A3B8]">Local Only</span>
+                    </div>
+                    <p className="text-xl font-bold text-[#3B82F6]">{loading ? "-" : localOnly.toLocaleString()}</p>
+                    <p className="text-[10px] text-[#64748B]">not on Spotify</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <div className="w-3 h-3 rounded-full bg-[#A855F7]" />
+                      <span className="text-xs text-[#94A3B8]">Matched</span>
+                    </div>
+                    <p className="text-xl font-bold text-[#A855F7]">{loading ? "-" : matchedCount.toLocaleString()}</p>
+                    <p className="text-[10px] text-[#64748B]">{spotifyMatchPct}% of Spotify liked</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="flex items-center justify-center gap-2 mb-1">
+                      <div className="w-3 h-3 rounded-full bg-[#22C55E]" />
+                      <span className="text-xs text-[#94A3B8]">Spotify Only</span>
+                    </div>
+                    <p className="text-xl font-bold text-[#22C55E]">{loading ? "-" : spotifyOnly.toLocaleString()}</p>
+                    <p className="text-[10px] text-[#64748B]">need to download</p>
+                  </div>
                 </div>
-              </div>
-              {/* Overlap center */}
-              <div className="relative z-10 text-center">
-                <p className="text-lg font-bold text-[#A855F7]">
-                  {loading ? "-" : matchedCount.toLocaleString()}
-                </p>
-                <p className="text-[10px] text-[#94A3B8]">Both</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+
+                {/* Per-library coverage bars */}
+                <div className="space-y-3 pt-2 border-t border-[#1E293B]">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-[#94A3B8]">Local library coverage</span>
+                      <span className="text-[#F8FAFC] tabular-nums">{matchPercent}% matched</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-[#1E293B] overflow-hidden">
+                      <div className="h-full bg-[#3B82F6] rounded-full transition-all duration-500" style={{ width: `${matchPercent}%` }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-[#94A3B8]">Spotify library coverage</span>
+                      <span className="text-[#F8FAFC] tabular-nums">{spotifyMatchPct}% matched</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-[#1E293B] overflow-hidden">
+                      <div className="h-full bg-[#22C55E] rounded-full transition-all duration-500" style={{ width: `${spotifyMatchPct}%` }} />
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </CardContent>
+      </Card>
 
       {/* Quick Actions */}
       <div>

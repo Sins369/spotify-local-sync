@@ -89,10 +89,19 @@ export default function DashboardPage() {
         setActionProgress((prev) => ({ ...prev, sync: { current: 1, total: 1 } }));
         detail = `Synced ${data.synced ?? data.total ?? 0} tracks`;
       } else if (action === "match") {
-        setActionProgress((prev) => ({ ...prev, match: { current: 0, total: 1 } }));
+        const matchEs = new EventSource("/api/match/progress");
+        matchEs.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            setActionProgress((prev) => ({
+              ...prev,
+              match: { current: data.processed ?? 0, total: data.total ?? 0 },
+            }));
+          } catch {}
+        };
         const res = await fetch("/api/match/run", { method: "POST" });
+        matchEs.close();
         const data = await res.json();
-        setActionProgress((prev) => ({ ...prev, match: { current: 1, total: 1 } }));
         detail = `Matched ${data.matched ?? 0} of ${data.total ?? 0} tracks`;
       } else if (action === "duplicates") {
         setActionProgress((prev) => ({ ...prev, duplicates: { current: 0, total: 1 } }));

@@ -54,7 +54,10 @@ async function processQueue(): Promise<void> {
     const password = getSetting("soulseek_password");
     if (!username || !password) return;
     try {
-      await connectSoulseek(username, password);
+      await Promise.race([
+        connectSoulseek(username, password),
+        sleep(10000).then(() => { throw new Error("Connection timeout"); }),
+      ]);
     } catch {
       return;
     }

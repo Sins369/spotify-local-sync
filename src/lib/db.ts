@@ -38,7 +38,8 @@ export function getDb(): Database.Database {
     `);
   }
 
-  // Reset any downloads stuck in 'downloading' state (server restart recovery)
+  // Reset downloads stuck in 'downloading' state (server restart recovery)
+  db.prepare("UPDATE downloads SET status = 'failed', error = 'Server restarted' WHERE status = 'downloading' AND started_at < datetime('now', '-1 hour')").run();
   db.prepare("UPDATE downloads SET status = 'queued' WHERE status = 'downloading'").run();
 
   return db;

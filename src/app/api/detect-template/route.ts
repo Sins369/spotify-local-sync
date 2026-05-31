@@ -108,9 +108,22 @@ function analyzeStructure(samples: FileSample[]): AnalysisResult {
   }
 
   if (mostCommonDepth === 3) {
+    const topLevel = samples
+      .filter((s) => s.parts.length >= 3)
+      .map((s) => s.parts[0]);
     const secondLevel = samples
       .filter((s) => s.parts.length >= 3)
       .map((s) => s.parts[1]);
+
+    const topLevelIsGenre = looksLikeGenres(topLevel);
+
+    if (topLevelIsGenre) {
+      return {
+        template: `{Genre}/{AlbumArtist}/${commonFilenamePattern}.{ext}`,
+        depth: 3,
+        description: "Genre / Artist / Track",
+      };
+    }
 
     const hasYearInAlbum = secondLevel.some((name) => /\(\d{4}\)|\b\d{4}\b/.test(name));
 
@@ -130,6 +143,32 @@ function analyzeStructure(samples: FileSample[]): AnalysisResult {
   }
 
   if (mostCommonDepth >= 4) {
+    const topLevel = samples
+      .filter((s) => s.parts.length >= 4)
+      .map((s) => s.parts[0]);
+    const topLevelIsGenre = looksLikeGenres(topLevel);
+
+    if (topLevelIsGenre) {
+      const thirdLevel = samples
+        .filter((s) => s.parts.length >= 4)
+        .map((s) => s.parts[2]);
+      const hasYearInAlbum = thirdLevel.some((name) => /\(\d{4}\)|\b\d{4}\b/.test(name));
+
+      if (hasYearInAlbum) {
+        return {
+          template: `{Genre}/{AlbumArtist}/{Album} ({Year})/${commonFilenamePattern}.{ext}`,
+          depth: mostCommonDepth,
+          description: "Genre / Artist / Album (Year) / Track",
+        };
+      }
+
+      return {
+        template: `{Genre}/{AlbumArtist}/{Album}/${commonFilenamePattern}.{ext}`,
+        depth: mostCommonDepth,
+        description: "Genre / Artist / Album / Track",
+      };
+    }
+
     return {
       template: `{AlbumArtist}/{Album}/{DiscNo}-${commonFilenamePattern}.{ext}`,
       depth: mostCommonDepth,
@@ -160,6 +199,29 @@ function detectFilenamePattern(filename: string): string {
   }
 
   return "{TrackNo} {Title}";
+}
+
+const COMMON_GENRES = new Set([
+  "rock", "pop", "hip-hop", "hip hop", "rap", "r&b", "rnb", "jazz", "blues",
+  "country", "classical", "electronic", "edm", "dance", "house", "techno",
+  "metal", "punk", "indie", "alternative", "folk", "soul", "funk", "reggae",
+  "latin", "world", "soundtrack", "ambient", "lo-fi", "lofi", "trap",
+  "drum and bass", "dnb", "dubstep", "trance", "k-pop", "kpop", "j-pop",
+  "progressive rock", "hard rock", "soft rock", "classic rock", "heavy metal",
+  "death metal", "black metal", "thrash metal", "power metal", "nu metal",
+  "grunge", "emo", "post-punk", "new wave", "synthwave", "vaporwave",
+  "gospel", "christian", "worship", "opera", "choral", "orchestral",
+  "acoustic", "singer-songwriter", "bluegrass", "americana",
+  "disco", "garage", "grime", "afrobeats", "bossa nova", "samba",
+  "flamenco", "celtic", "ska", "dub", "psych", "psychedelic",
+  "experimental", "noise", "industrial", "shoegaze", "dream pop",
+  "chillout", "downtempo", "trip-hop", "trip hop",
+]);
+
+function looksLikeGenres(folderNames: string[]): boolean {
+  const unique = [...new Set(folderNames.map((n) => n.toLowerCase().trim()))];
+  const genreMatches = unique.filter((n) => COMMON_GENRES.has(n));
+  return genreMatches.length >= Math.ceil(unique.length * 0.4) && genreMatches.length >= 2;
 }
 
 function mode<T>(arr: T[]): T {

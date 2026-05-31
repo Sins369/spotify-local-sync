@@ -10,6 +10,7 @@ describe("renderPath", () => {
     disc_no: 1,
     title: "Time",
     year: 1973,
+    genre: "Progressive Rock",
     ext: "flac",
   };
 
@@ -46,5 +47,10 @@ describe("renderPath", () => {
       ...track, album_artist: null, artist: null, album: null, title: null, track_no: null,
     });
     expect(result).toBe("Unknown Artist/Unknown Album/00 Unknown Title.flac");
+  });
+
+  it("renders genre in template", () => {
+    const result = renderPath("{Genre}/{AlbumArtist}/{Album}/{TrackNo} {Title}.{ext}", track);
+    expect(result).toBe("Progressive Rock/Pink Floyd/The Dark Side of the Moon/03 Time.flac");
   });
 });

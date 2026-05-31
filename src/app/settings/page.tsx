@@ -34,6 +34,7 @@ const SAMPLE_TRACK = {
   disc_no: 1,
   title: "Time",
   year: 1973,
+  genre: "Progressive Rock",
   ext: "flac",
 };
 
@@ -272,7 +273,7 @@ export default function SettingsPage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
-              Variables: {"{AlbumArtist}"}, {"{Artist}"}, {"{Album}"}, {"{Title}"}, {"{TrackNo}"}, {"{DiscNo}"}, {"{Year}"}, {"{ext}"}
+              Variables: {"{AlbumArtist}"}, {"{Artist}"}, {"{Album}"}, {"{Title}"}, {"{Genre}"}, {"{TrackNo}"}, {"{DiscNo}"}, {"{Year}"}, {"{ext}"}
             </p>
             {detectedInfo && (
               <div className="text-xs border rounded px-3 py-2 space-y-1">

@@ -75,6 +75,7 @@ export async function POST(request: NextRequest) {
       track_no: spotifyTrack.track_number,
       disc_no: spotifyTrack.disc_number,
       year: spotifyTrack.year,
+      genre: null,
       ext,
     });
 

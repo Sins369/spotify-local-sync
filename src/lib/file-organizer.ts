@@ -6,6 +6,7 @@ interface TrackInfo {
   disc_no: number | null;
   title: string | null;
   year: number | null;
+  genre: string | null;
   ext: string;
 }
 
@@ -22,12 +23,14 @@ export function renderPath(template: string, track: TrackInfo): string {
   const artist = track.artist || "Unknown Artist";
   const album = track.album || "Unknown Album";
   const title = track.title || "Unknown Title";
+  const genre = track.genre || "Unknown Genre";
 
   const result = template
     .replace(/\{AlbumArtist\}/g, sanitize(albumArtist))
     .replace(/\{Artist\}/g, sanitize(artist))
     .replace(/\{Album\}/g, sanitize(album))
     .replace(/\{Title\}/g, sanitize(title))
+    .replace(/\{Genre\}/g, sanitize(genre))
     .replace(/\{TrackNo\}/g, pad(track.track_no))
     .replace(/\{DiscNo\}/g, pad(track.disc_no))
     .replace(/\{Year\}/g, String(track.year ?? "Unknown Year"))

@@ -11,6 +11,7 @@ const FORMAT_SCORES: Record<string, number> = {
   ogg: 65,
   m4a: 60,
   mp3: 50,
+  mpeg: 50,
   aac: 55,
   wma: 40,
 };
@@ -88,8 +89,10 @@ export function scoreTrackQuality(track: LocalTrack): number {
   const format = (track.format ?? "").toLowerCase();
   score += FORMAT_SCORES[format] ?? 30;
 
-  // Bitrate score: bitrate / 10, capped at 50
-  const bitrateScore = Math.min((track.bitrate ?? 0) / 10, 50);
+  // Bitrate score: normalize to kbps first (raw value may be bps), then /10, capped at 50
+  const rawBitrate = track.bitrate ?? 0;
+  const kbps = rawBitrate > 10000 ? rawBitrate / 1000 : rawBitrate;
+  const bitrateScore = Math.min(kbps / 10, 50);
   score += bitrateScore;
 
   // Artwork bonus

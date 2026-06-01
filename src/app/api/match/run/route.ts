@@ -204,14 +204,85 @@ export async function POST() {
       }
     }
 
-    // Commit remaining
+    // Commit remaining from forward pass
+    if (pendingMatches.length > 0) {
+      matchBatch(pendingMatches);
+      pendingMatches.length = 0;
+    }
+
+    // Reverse pass: find unmatched Spotify tracks that have a local match
+    const unmatchedSpotify = db
+      .prepare(
+        `SELECT st.* FROM spotify_tracks st
+         LEFT JOIN matches m ON st.id = m.spotify_track_id
+         WHERE m.id IS NULL AND st.title IS NOT NULL AND st.artist IS NOT NULL`
+      )
+      .all() as Array<{
+      id: number; title: string; artist: string; isrc: string | null; duration_ms: number | null;
+    }>;
+
+    const localIsrcIndex = new Map<string, { id: number; title: string; artist: string; duration_ms: number | null }>();
+    const localNormIndex = new Map<string, Array<{ id: number; title: string; artist: string; duration_ms: number | null }>>();
+    const allLocal = db.prepare("SELECT id, title, artist, isrc, duration_ms FROM local_tracks WHERE title IS NOT NULL AND artist IS NOT NULL").all() as Array<{
+      id: number; title: string; artist: string; isrc: string | null; duration_ms: number | null;
+    }>;
+    const alreadyMatchedLocal = new Set(
+      (db.prepare("SELECT local_track_id FROM matches").all() as Array<{ local_track_id: number }>).map(r => r.local_track_id)
+    );
+
+    // For reverse pass, allow multiple Spotify tracks to match same local track
+    // (same song on different albums/compilations in Spotify)
+    for (const lt of allLocal) {
+      if (lt.isrc && lt.isrc.length > 3) localIsrcIndex.set(lt.isrc.toUpperCase(), lt);
+      const key = `${normalizeTitle(lt.title)}||${normalizeArtist(lt.artist)}`;
+      if (!localNormIndex.has(key)) localNormIndex.set(key, []);
+      localNormIndex.get(key)!.push(lt);
+    }
+
+    const alreadyMatchedSpotify = new Set(
+      (db.prepare("SELECT spotify_track_id FROM matches").all() as Array<{ spotify_track_id: number }>).map(r => r.spotify_track_id)
+    );
+
+    let reverseMatched = 0;
+    for (const st of unmatchedSpotify) {
+      if (alreadyMatchedSpotify.has(st.id)) continue;
+
+      // ISRC reverse match — allow matching to already-matched local tracks
+      if (st.isrc && st.isrc.length > 3) {
+        const localHit = localIsrcIndex.get(st.isrc.toUpperCase());
+        if (localHit) {
+          pendingMatches.push({ local_id: localHit.id, spotify_id: st.id, method: "isrc", confidence: 0.99, confirmed: 1 });
+          alreadyMatchedSpotify.add(st.id);
+          reverseMatched++;
+          continue;
+        }
+      }
+
+      // Normalized title+artist reverse match
+      const key = `${normalizeTitle(st.title)}||${normalizeArtist(st.artist)}`;
+      const candidates = localNormIndex.get(key);
+      if (candidates && candidates.length > 0) {
+        const best = candidates[0];
+        const score = scoreMatch(
+          { title: best.title, artist: best.artist, duration_ms: best.duration_ms ?? 0 },
+          { title: st.title, artist: st.artist, duration_ms: st.duration_ms ?? 0 }
+        );
+        if (score >= 0.75) {
+          pendingMatches.push({ local_id: best.id, spotify_id: st.id, method: "search", confidence: score, confirmed: score >= 0.9 ? 1 : 0 });
+          alreadyMatchedSpotify.add(st.id);
+          reverseMatched++;
+        }
+      }
+    }
+
     if (pendingMatches.length > 0) {
       matchBatch(pendingMatches);
     }
 
+    matched += reverseMatched;
     eventBus.emit("match:complete", { total, matched, noMatch });
 
-    return NextResponse.json({ total, matched, no_match: noMatch });
+    return NextResponse.json({ total, matched, no_match: noMatch, reverse_matched: reverseMatched });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Matching failed" },

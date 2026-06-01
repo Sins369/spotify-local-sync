@@ -31,6 +31,7 @@ export default function BackupPage() {
   const [settings, setSettings] = useState<Settings>({});
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<{ copied: number; total: number; file: string } | null>(null);
 
   useEffect(() => {
     fetchAll();
@@ -72,13 +73,30 @@ export default function BackupPage() {
 
   async function handleSync() {
     setSyncing(true);
+    setSyncProgress(null);
+    const eventSource = new EventSource("/api/backup/progress");
+    eventSource.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.done) {
+          eventSource.close();
+          return;
+        }
+        if (data.copied != null && data.total != null) {
+          const filename = (data.file ?? "").split(/[\\/]/).pop() ?? "";
+          setSyncProgress({ copied: data.copied, total: data.total, file: filename });
+        }
+      } catch {}
+    };
     try {
       await fetch("/api/backup/sync", { method: "POST" });
       await fetchAll();
     } catch {
       // sync failed
     } finally {
+      eventSource.close();
       setSyncing(false);
+      setSyncProgress(null);
     }
   }
 
@@ -137,25 +155,47 @@ export default function BackupPage() {
             </p>
           </div>
 
-          {/* Sync Now Button */}
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center gap-2 px-5 py-2 bg-[#34d399] text-[#12121c] font-semibold rounded-[4px] disabled:opacity-60 transition-colors"
-            style={{ boxShadow: "0 0 16px #34d39933" }}
-          >
-            {syncing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Syncing...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4" />
-                Sync Now
-              </>
-            )}
-          </button>
+          {/* Sync Now Button + Progress */}
+          {syncing && syncProgress ? (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-[12px]">
+                <span className="text-[#e0e0e8] font-semibold">
+                  Syncing... {syncProgress.copied} / {syncProgress.total}
+                </span>
+                <span className="text-[#8888a0] font-mono">
+                  {syncProgress.total > 0 ? Math.round((syncProgress.copied / syncProgress.total) * 100) : 0}%
+                </span>
+              </div>
+              <div className="w-full h-2 bg-[#24243a] rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-[#34d399] rounded-full transition-all duration-300"
+                  style={{ width: `${syncProgress.total > 0 ? (syncProgress.copied / syncProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <p className="text-[11px] text-[#5a5a6e] font-mono truncate">
+                {syncProgress.file}
+              </p>
+            </div>
+          ) : (
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="flex items-center gap-2 px-5 py-2 bg-[#34d399] text-[#12121c] font-semibold rounded-[4px] disabled:opacity-60 transition-colors"
+              style={{ boxShadow: "0 0 16px #34d39933" }}
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Starting sync...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4" />
+                  Sync Now
+                </>
+              )}
+            </button>
+          )}
 
           {/* Configuration Card */}
           <div className="bg-[#1c1c28] border border-[rgba(255,255,255,0.06)] rounded-[4px] p-4">

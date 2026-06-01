@@ -277,7 +277,11 @@ Replace custom folder browser dialog with native Windows folder picker. New API 
 - `src/components/layout/topnav.tsx` -- top navigation bar
 - `src/app/library/page.tsx` -- unified library page
 - `src/app/api/folder-picker/route.ts` -- native Windows folder picker
-- `src/app/api/activity/route.ts` -- activity log API
+- `src/app/api/activity/route.ts` -- GET activity log (most recent first, limit 50)
+- `src/app/api/library/route.ts` -- unified library query (joins local_tracks + spotify_tracks with filters/sort/pagination)
+- `src/app/api/soulseek/retry-failed/route.ts` -- POST retries all failed downloads (re-queues them)
+- `src/app/api/soulseek/clear-queue/route.ts` -- POST cancels all queued downloads
+- `src/app/api/backup/history/route.ts` -- GET backup history (if not already existing)
 
 ### Major Rewrites
 - `src/app/layout.tsx` -- remove sidebar, add top nav, new fonts

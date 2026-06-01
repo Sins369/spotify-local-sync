@@ -120,55 +120,24 @@ export async function streamDownload(
       settle(new Error("Write error: " + err.message));
     });
 
-    client.downloadStream(
+    activeStreams.set(downloadId, { destroy: () => cleanup() });
+
+    client.download(
       { file: { user: username, file } },
-      (err: Error | null, rs: NodeJS.ReadableStream) => {
+      (err: Error | null, data: Buffer) => {
         if (err) {
           settle(err);
           return;
         }
-
-        readStream = rs;
-
-        activeStreams.set(downloadId, {
-          destroy: () => {
-            cleanup();
-          },
-        });
-
-        rs.on("data", (chunk: Buffer) => {
-          hasReceivedData = true;
-          resetTimeout();
-          bytesReceived += chunk.length;
-          writeStream!.write(chunk);
-
-          const now = Date.now();
-          if (now - lastProgressUpdate > 200) {
-            const elapsed = (now - startedAt) / 1000;
-            progress.bytesReceived = bytesReceived;
-            progress.percent = expectedSize > 0
-              ? Math.min(Math.round((bytesReceived / expectedSize) * 100), 100)
-              : 0;
-            progress.speed = elapsed > 0 ? Math.round(bytesReceived / elapsed) : 0;
-            activeProgress.set(downloadId, { ...progress });
-            onProgress?.({ ...progress });
-            lastProgressUpdate = now;
-          }
-        });
-
-        rs.on("end", () => {
-          writeStream!.end(() => {
-            progress.bytesReceived = bytesReceived;
-            progress.percent = 100;
-            activeProgress.set(downloadId, { ...progress });
-            onProgress?.({ ...progress });
-            settle();
-          });
-        });
-
-        rs.on("error", (streamErr: Error) => {
-          settle(streamErr);
-        });
+        hasReceivedData = true;
+        resetTimeout();
+        bytesReceived = data.length;
+        progress.bytesReceived = bytesReceived;
+        progress.percent = 100;
+        progress.speed = bytesReceived > 0 ? Math.round(bytesReceived / ((Date.now() - startedAt) / 1000)) : 0;
+        activeProgress.set(downloadId, { ...progress });
+        onProgress?.({ ...progress });
+        writeStream!.end(data, () => settle());
       }
     );
   });

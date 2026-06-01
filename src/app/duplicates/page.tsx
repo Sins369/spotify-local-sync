@@ -435,40 +435,59 @@ export default function DuplicatesPage() {
                             >
                               {qualityPercent(member.quality_score)}
                             </span>
-                            {/* BEST indicator or Keep button */}
-                            {isBest ? (
-                              <span className="inline-flex items-center gap-1">
-                                <span
-                                  className="inline-block w-1.5 h-1.5 rounded-full"
-                                  style={{ backgroundColor: "#34d399" }}
-                                />
-                                <span
-                                  className="font-medium"
-                                  style={{
-                                    fontSize: "10px",
-                                    color: "#34d399",
-                                  }}
-                                >
-                                  BEST
-                                </span>
-                              </span>
-                            ) : (
-                              <button
-                                disabled={resolving}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  stopPlayback();
-                                  handleResolve(group.id, "keep_one", member.local_track_id);
-                                }}
-                                className="font-medium transition-colors disabled:opacity-50"
-                                style={{ fontSize: "10px", color: "#8888a0" }}
-                                onMouseEnter={(e) => { (e.target as HTMLElement).style.color = "#34d399"; }}
-                                onMouseLeave={(e) => { (e.target as HTMLElement).style.color = "#8888a0"; }}
-                              >
-                                Keep this
-                              </button>
-                            )}
                           </div>
+                        </div>
+
+                        {/* Keep / BEST action — right aligned */}
+                        <div className="shrink-0 ml-2">
+                          {isBest ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full"
+                              style={{
+                                backgroundColor: "rgba(52,211,153,0.12)",
+                                border: "1px solid rgba(52,211,153,0.3)",
+                              }}
+                            >
+                              <span
+                                className="inline-block w-1.5 h-1.5 rounded-full"
+                                style={{ backgroundColor: "#34d399" }}
+                              />
+                              <span
+                                className="font-semibold"
+                                style={{ fontSize: "11px", color: "#34d399" }}
+                              >
+                                BEST
+                              </span>
+                            </span>
+                          ) : (
+                            <button
+                              disabled={resolving}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                stopPlayback();
+                                handleResolve(group.id, "keep_one", member.local_track_id);
+                              }}
+                              className="px-3 py-1.5 rounded-full font-medium transition-all duration-150 disabled:opacity-40"
+                              style={{
+                                fontSize: "11px",
+                                color: "#8888a0",
+                                backgroundColor: "transparent",
+                                border: "1px solid rgba(255,255,255,0.1)",
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.color = "#34d399";
+                                e.currentTarget.style.borderColor = "rgba(52,211,153,0.4)";
+                                e.currentTarget.style.backgroundColor = "rgba(52,211,153,0.08)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.color = "#8888a0";
+                                e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)";
+                                e.currentTarget.style.backgroundColor = "transparent";
+                              }}
+                            >
+                              Keep
+                            </button>
+                          )}
                         </div>
                       </div>
                     );

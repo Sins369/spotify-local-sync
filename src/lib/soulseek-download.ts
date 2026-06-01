@@ -97,7 +97,7 @@ export async function streamDownload(
       timeoutTimer = setTimeout(() => {
         const msg = hasReceivedData
           ? "Download stalled — no data for 60s"
-          : "User not responding — try enabling sharing in Settings";
+          : "User not responding — retrying with another source";
         settle(new Error(msg));
       }, timeout);
     }

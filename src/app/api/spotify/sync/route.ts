@@ -81,6 +81,27 @@ export async function POST() {
     // Batch-fetch artist genres from Spotify
     const artistGenres = await client.getArtistGenres([...artistIds]);
 
+    const GENRE_MAP: Record<string, string> = {
+      "drum and bass": "Drum & Bass",
+      "dnb": "Drum & Bass",
+      "r&b": "R&B",
+      "uk garage": "UK Garage",
+      "lo-fi beats": "Lo-Fi Beats",
+      "hip hop": "Hip Hop",
+      "trip hop": "Trip Hop",
+      "k-pop": "K-Pop",
+      "j-pop": "J-Pop",
+      "edm": "EDM",
+      "uk drill": "UK Drill",
+      "diy": "DIY",
+    };
+
+    function formatGenre(raw: string): string {
+      const lower = raw.toLowerCase();
+      if (GENRE_MAP[lower]) return GENRE_MAP[lower];
+      return raw.replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+
     const upsertAll = db.transaction(() => {
       for (const item of savedTracks) {
         const track = item.track;
@@ -92,7 +113,7 @@ export async function POST() {
         const artUrl = track.album.images?.[0]?.url ?? null;
         const primaryArtistId = trackArtistMap.get(track.id);
         const genres = primaryArtistId ? artistGenres.get(primaryArtistId) : null;
-        const genreStr = genres && genres.length > 0 ? genres[0] : null;
+        const genreStr = genres && genres.length > 0 ? formatGenre(genres[0]) : null;
 
         upsertStmt.run({
           spotify_id: track.id,

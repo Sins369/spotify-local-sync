@@ -129,7 +129,7 @@ export async function scanLibrary(
 
   // Prepared statement to check if a track already exists with same path, size, and mtime
   const checkStmt = db.prepare(
-    "SELECT size_bytes, mtime_ms FROM local_tracks WHERE path = ?"
+    "SELECT size_bytes, mtime_ms, has_artwork FROM local_tracks WHERE path = ?"
   );
 
   // Prepared statement for upsert
@@ -169,17 +169,20 @@ export async function scanLibrary(
   for (const filePath of files) {
     // Check if file is unchanged
     const existing = checkStmt.get(filePath) as
-      | { size_bytes: number; mtime_ms: number }
+      | { size_bytes: number; mtime_ms: number; has_artwork: number | null }
       | undefined;
 
     const stat = fs.statSync(filePath);
     const sizeBytes = stat.size;
     const mtimeMs = Math.floor(stat.mtimeMs);
 
+    const needsArtworkCheck = existing && existing.has_artwork === null;
+
     if (
       existing &&
       existing.size_bytes === sizeBytes &&
-      existing.mtime_ms === mtimeMs
+      existing.mtime_ms === mtimeMs &&
+      !needsArtworkCheck
     ) {
       scanned++;
       eventBus.emit("scan:progress", { total, scanned, current: filePath });

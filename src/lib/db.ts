@@ -48,7 +48,7 @@ export function getDb(): Database.Database {
 
   const hasLocalArtwork = db.prepare("SELECT COUNT(*) as c FROM pragma_table_info('local_tracks') WHERE name = 'has_artwork'").get() as { c: number };
   if (hasLocalArtwork.c === 0) {
-    db.exec(`ALTER TABLE local_tracks ADD COLUMN has_artwork INTEGER DEFAULT 0`);
+    db.exec(`ALTER TABLE local_tracks ADD COLUMN has_artwork INTEGER`);
   }
 
   // Reset downloads stuck in 'downloading' state (server restart recovery)

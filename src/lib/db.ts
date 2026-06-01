@@ -55,6 +55,14 @@ export function getDb(): Database.Database {
   db.prepare("UPDATE downloads SET status = 'failed', error = 'Server restarted' WHERE status = 'downloading' AND started_at < datetime('now', '-1 hour')").run();
   db.prepare("UPDATE downloads SET status = 'queued' WHERE status = 'downloading'").run();
 
+  // Auto-start download worker if there are queued items
+  const queuedCount = (db.prepare("SELECT COUNT(*) as c FROM downloads WHERE status = 'queued'").get() as { c: number }).c;
+  if (queuedCount > 0) {
+    setTimeout(() => {
+      import("./download-worker").then(m => m.startDownloadWorker()).catch(() => {});
+    }, 3000);
+  }
+
   return db;
 }
 

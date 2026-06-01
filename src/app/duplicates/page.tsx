@@ -124,14 +124,20 @@ export default function DuplicatesPage() {
       audioRef.current = null;
       setPlayingId(null);
     };
-    audio.onerror = () => {
+    audio.onerror = (e) => {
+      console.error("Audio playback error:", e);
       audioRef.current = null;
       setPlayingId(null);
     };
     audio.src = `/api/preview?path=${encodeURIComponent(member.path)}`;
+    audio.crossOrigin = "anonymous";
     audioRef.current = audio;
     setPlayingId(member.id);
-    audio.play().catch(() => {});
+    audio.play().catch((err) => {
+      console.error("Play failed:", err);
+      setPlayingId(null);
+      audioRef.current = null;
+    });
   }
 
   async function handleResolve(groupId: number, action: string, keepId?: number) {

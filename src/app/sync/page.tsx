@@ -295,7 +295,7 @@ export default function SyncPage() {
                     const isQueued = downloadedIds.has(track.id);
                     return (
                       <button
-                        key={track.id}
+                        key={`t-${track.id}`}
                         onClick={() => setSelectedTrack(track)}
                         className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
                           isSelected
@@ -874,7 +874,7 @@ function LikeSection({ tracks, loading }: {
               const isLiked = liked.has(track.id);
               return (
                 <div
-                  key={track.id}
+                  key={`like-${track.id}`}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg border transition-colors ${
                     isLiked
                       ? "border-[#34d399]/20 bg-[#34d399]/5 opacity-60"

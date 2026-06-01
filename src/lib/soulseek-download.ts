@@ -51,26 +51,16 @@ export async function streamDownload(
     let lastProgressUpdate = 0;
     let timeoutTimer: ReturnType<typeof setTimeout>;
     let settled = false;
-    let writeStream: fs.WriteStream | null = null;
-    let readStream: NodeJS.ReadableStream | null = null;
-
     function cleanup() {
-      try { if (readStream) (readStream as any).destroy?.(); } catch {}
-      if (writeStream) {
-        const ws = writeStream;
-        ws.on("close", () => {
-          try {
-            if (fs.existsSync(destPath)) {
-              const stat = fs.statSync(destPath);
-              if (stat.size === 0 || bytesReceived === 0) {
-                fs.unlinkSync(destPath);
-                cleanEmptyParents(path.dirname(destPath));
-              }
-            }
-          } catch {}
-        });
-        try { ws.destroy(); } catch {}
-      }
+      try {
+        if (fs.existsSync(destPath)) {
+          const stat = fs.statSync(destPath);
+          if (stat.size === 0 || bytesReceived === 0) {
+            fs.unlinkSync(destPath);
+            cleanEmptyParents(path.dirname(destPath));
+          }
+        }
+      } catch {}
     }
 
     function settle(err?: Error) {
@@ -114,31 +104,40 @@ export async function streamDownload(
     };
     activeProgress.set(downloadId, progress);
 
-    writeStream = fs.createWriteStream(destPath);
-
-    writeStream.on("error", (err) => {
-      settle(new Error("Write error: " + err.message));
-    });
-
     activeStreams.set(downloadId, { destroy: () => cleanup() });
 
     try {
       client.download(
-        { file: { user: username, file } },
-        (err: Error | null, data: Buffer) => {
+        { file: { user: username, file }, path: destPath },
+        (err: Error | null, result: unknown) => {
           if (err) {
             settle(err);
             return;
           }
           hasReceivedData = true;
           clearTimeout(timeoutTimer);
-          bytesReceived = data.length;
+
+          const buf = result && typeof result === "object" && "buffer" in result
+            ? (result as { buffer: Buffer }).buffer
+            : (Buffer.isBuffer(result) ? result : null);
+
+          bytesReceived = buf?.length ?? expectedSize;
           progress.bytesReceived = bytesReceived;
           progress.percent = 100;
           progress.speed = bytesReceived > 0 ? Math.round(bytesReceived / ((Date.now() - startedAt) / 1000)) : 0;
           activeProgress.set(downloadId, { ...progress });
           onProgress?.({ ...progress });
-          writeStream!.end(data, () => settle());
+
+          if (fs.existsSync(destPath) && fs.statSync(destPath).size > 0) {
+            settle();
+          } else if (buf && buf.length > 0) {
+            fs.writeFile(destPath, buf, (writeErr) => {
+              if (writeErr) settle(new Error("Write error: " + writeErr.message));
+              else settle();
+            });
+          } else {
+            settle(new Error("Download completed but no data received"));
+          }
         }
       );
     } catch (e) {

@@ -11,8 +11,8 @@ declare module "slsk-client" {
       callback: (err: Error | null, results: unknown[]) => void
     ): void;
     download(
-      options: { file: { user: string; file: string } },
-      callback: (err: Error | null, data: Buffer) => void
+      options: { file: { user: string; file: string }; path?: string },
+      callback: (err: Error | null, result: unknown) => void
     ): void;
     destroy(): void;
   }

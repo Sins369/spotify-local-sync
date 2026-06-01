@@ -66,20 +66,47 @@ export function findDuplicateGroups(tracks: LocalTrack[]): DuplicateGroupResult[
       }
     }
 
-    // Remaining: same title+artist but different durations (likely remixes/edits)
+    // Remaining: same title+artist but different durations
+    // Only flag if they're NOT clearly different versions (remix/VIP/edit/sped up)
     const remaining = group.filter(t => !seenTrackIds.has(t.id));
     if (remaining.length >= 2) {
-      const looseGroups = subGroupByDuration(remaining, LOOSE_DURATION_THRESHOLD_MS);
-      for (const subGroup of looseGroups) {
-        if (subGroup.length >= 2) {
-          results.push({ key: `review:${key}`, members: subGroup });
-          subGroup.forEach(t => seenTrackIds.add(t.id));
+      const filtered = filterOutVersionVariants(remaining);
+      if (filtered.length >= 2) {
+        const looseGroups = subGroupByDuration(filtered, LOOSE_DURATION_THRESHOLD_MS);
+        for (const subGroup of looseGroups) {
+          if (subGroup.length >= 2) {
+            results.push({ key: `review:${key}`, members: subGroup });
+            subGroup.forEach(t => seenTrackIds.add(t.id));
+          }
         }
       }
     }
   }
 
   return results;
+}
+
+const VERSION_KEYWORDS = /\b(remix|remixed|remixes|vip|edit|sped up|slowed|bootleg|flip|rework|acoustic|live|instrumental|radio mix|extended mix|club mix|dub mix)\b/i;
+
+function hasVersionKeyword(text: string | null | undefined): boolean {
+  return !!text && VERSION_KEYWORDS.test(text);
+}
+
+function filterOutVersionVariants(tracks: LocalTrack[]): LocalTrack[] {
+  const albums = tracks.map(t => t.album ?? "");
+  const uniqueAlbums = new Set(albums.map(a => a.toLowerCase()));
+
+  // If all on the same album, keep them (genuine duplicates)
+  if (uniqueAlbums.size <= 1) return tracks;
+
+  // Check if any album or title contains a version keyword
+  const anyHasVersion = tracks.some(t =>
+    hasVersionKeyword(t.album) || hasVersionKeyword(t.title)
+  );
+  if (!anyHasVersion) return tracks;
+
+  // Albums differ and at least one has a version keyword — these are intentionally different versions
+  return [];
 }
 
 function subGroupByDuration(tracks: LocalTrack[], threshold: number): LocalTrack[][] {

@@ -259,6 +259,14 @@ Variables: `{AlbumArtist}`, `{Artist}`, `{Album}`, `{Title}`, `{Genre}`, `{Track
 
 </details>
 
+## Disclaimer
+
+This tool is intended for **personal use** to manage music you legally own. Users are solely responsible for ensuring their use of this software complies with applicable laws in their jurisdiction, including copyright law.
+
+The developers do not condone or encourage copyright infringement. The Soulseek integration is provided for obtaining copies of music you have already purchased or have the right to access. Downloading copyrighted material without authorization may violate the law in your country.
+
+This project is not affiliated with, endorsed by, or associated with Spotify, Soulseek, or Apple.
+
 ## License
 
 MIT

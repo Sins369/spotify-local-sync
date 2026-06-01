@@ -1,0 +1,91 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - complementary [ref=e3]:
+      - generic [ref=e4]:
+        - heading "Spotify Local Sync" [level=1] [ref=e5]
+        - paragraph [ref=e6]: Music library manager
+      - navigation [ref=e7]:
+        - link "Dashboard" [ref=e8] [cursor=pointer]:
+          - /url: /
+          - img [ref=e9]
+          - text: Dashboard
+        - link "Local Library" [ref=e14] [cursor=pointer]:
+          - /url: /local-library
+          - img [ref=e15]
+          - text: Local Library
+        - link "Spotify Library" [ref=e17] [cursor=pointer]:
+          - /url: /spotify-library
+          - img [ref=e18]
+          - text: Spotify Library
+        - link "Sync" [ref=e20] [cursor=pointer]:
+          - /url: /sync
+          - img [ref=e21]
+          - text: Sync
+        - link "Downloads" [ref=e26] [cursor=pointer]:
+          - /url: /downloads
+          - img [ref=e27]
+          - text: Downloads
+        - link "Metadata" [ref=e30] [cursor=pointer]:
+          - /url: /metadata
+          - img [ref=e31]
+          - text: Metadata
+        - link "Duplicates" [ref=e35] [cursor=pointer]:
+          - /url: /duplicates
+          - img [ref=e36]
+          - text: Duplicates
+        - link "Backup" [ref=e39] [cursor=pointer]:
+          - /url: /backup
+          - img [ref=e40]
+          - text: Backup
+        - link "Settings" [ref=e43] [cursor=pointer]:
+          - /url: /settings
+          - img [ref=e44]
+          - text: Settings
+      - paragraph [ref=e48]: v0.1.0
+    - main [ref=e49]:
+      - generic [ref=e50]:
+        - generic [ref=e52]:
+          - img [ref=e53]
+          - generic [ref=e55]:
+            - heading "Local Library" [level=2] [ref=e56]
+            - paragraph [ref=e57]: 0 tracks scanned
+        - generic [ref=e58]:
+          - img [ref=e59]
+          - textbox "Search by title, artist, album, or genre..." [ref=e62]
+        - generic [ref=e63]:
+          - generic [ref=e65]:
+            - generic [ref=e66]: All Local Tracks
+            - img [ref=e67]
+          - table [ref=e72]:
+            - rowgroup [ref=e73]:
+              - row "Title Artist Album Genre Format Bitrate Duration" [ref=e74]:
+                - columnheader "Title" [ref=e75] [cursor=pointer]:
+                  - generic [ref=e76]:
+                    - text: Title
+                    - img [ref=e77]
+                - columnheader "Artist" [ref=e79] [cursor=pointer]:
+                  - generic [ref=e80]:
+                    - text: Artist
+                    - img [ref=e81]
+                - columnheader "Album" [ref=e84] [cursor=pointer]:
+                  - generic [ref=e85]:
+                    - text: Album
+                    - img [ref=e86]
+                - columnheader "Genre" [ref=e89] [cursor=pointer]:
+                  - generic [ref=e90]:
+                    - text: Genre
+                    - img [ref=e91]
+                - columnheader "Format" [ref=e94] [cursor=pointer]:
+                  - generic [ref=e95]:
+                    - text: Format
+                    - img [ref=e96]
+                - columnheader "Bitrate" [ref=e99] [cursor=pointer]:
+                  - generic [ref=e100]:
+                    - text: Bitrate
+                    - img [ref=e101]
+                - columnheader "Duration" [ref=e104] [cursor=pointer]:
+                  - generic [ref=e105]:
+                    - text: Duration
+                    - img [ref=e106]
+            - rowgroup
+  - region "Notifications alt+T"

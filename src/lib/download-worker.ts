@@ -3,7 +3,6 @@ import { getSetting } from "./settings";
 import { connectSoulseek, isConnected } from "./soulseek-client";
 import { streamDownload } from "./soulseek-download";
 import { writeTags } from "./metadata-writer";
-import { renderPath } from "./file-organizer";
 import path from "path";
 
 const globalForWorker = globalThis as unknown as { __downloadWorkerRunning: boolean };
@@ -101,22 +100,8 @@ async function processDownload(download: {
   }
 
   const musicPath = getSetting("download_path") || getSetting("backup_dest_path") || getSetting("music_source_path") || process.cwd();
-  const template = getSetting("file_template") || "{AlbumArtist}/{Album}/{TrackNo} {Title}.{ext}";
-  const ext = download.format || path.extname(download.source_file).slice(1).toLowerCase() || "mp3";
-
-  const destRelative = renderPath(template, {
-    album_artist: spotifyTrack.album_artist,
-    artist: spotifyTrack.artist,
-    album: spotifyTrack.album,
-    title: spotifyTrack.title,
-    track_no: spotifyTrack.track_number,
-    disc_no: spotifyTrack.disc_number,
-    year: spotifyTrack.year,
-    genre: null,
-    ext,
-  });
-
-  const destPath = path.join(musicPath, destRelative);
+  const filename = download.filename || path.basename(download.source_file);
+  const destPath = path.join(musicPath, filename);
 
   try {
     await streamDownload(
@@ -147,6 +132,10 @@ async function processDownload(download: {
     db.prepare(
       "UPDATE downloads SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?"
     ).run(error, download.id);
+    // Record failed user so search results can flag them
+    db.prepare(
+      "INSERT OR IGNORE INTO failed_users (spotify_track_id, username) VALUES (?, ?)"
+    ).run(download.spotify_track_id, download.source_user);
   }
 }
 

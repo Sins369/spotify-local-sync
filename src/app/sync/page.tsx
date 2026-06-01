@@ -318,6 +318,7 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
   const [downloading, setDownloading] = useState<string | null>(null);
   const [downloaded, setDownloaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [failedUsers, setFailedUsers] = useState<Set<string>>(new Set());
   const prevTrackId = useRef<number | null>(null);
 
   useEffect(() => {
@@ -326,6 +327,12 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
       setDownloaded(false);
       setError(null);
       setDownloading(null);
+
+      // Fetch failed users for this track
+      fetch(`/api/soulseek/failed-users?track_id=${track.id}`)
+        .then((r) => r.ok ? r.json() : [])
+        .then((users: string[]) => setFailedUsers(new Set(users)))
+        .catch(() => {});
 
       if (cachedResults) {
         setResults(cachedResults);
@@ -477,7 +484,7 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
                 <>
                   <p className="text-[10px] text-[#64748B] uppercase tracking-wider mb-1">FLAC (Lossless)</p>
                   {flacResults.map((r, i) => (
-                    <ResultRow key={`f-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} />
+                    <ResultRow key={`f-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} isFailed={failedUsers.has(r.username)} />
                   ))}
                 </>
               )}
@@ -485,7 +492,7 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
                 <>
                   <p className="text-[10px] text-[#64748B] uppercase tracking-wider mb-1 mt-3">MP3 / Other</p>
                   {otherResults.map((r, i) => (
-                    <ResultRow key={`o-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} />
+                    <ResultRow key={`o-${i}`} result={r} downloading={downloading} onDownload={handleDownload} formatSize={formatSize} isFailed={failedUsers.has(r.username)} />
                   ))}
                 </>
               )}
@@ -500,25 +507,29 @@ function DetailPanel({ track, cachedResults, onDownloaded, onClose, onCacheResul
   );
 }
 
-function ResultRow({ result, downloading, onDownload, formatSize }: {
+function ResultRow({ result, downloading, onDownload, formatSize, isFailed }: {
   result: SoulseekResult; downloading: string | null;
   onDownload: (r: SoulseekResult) => void; formatSize: (b: number) => string;
+  isFailed?: boolean;
 }) {
   const isDownloading = downloading === result.file;
   const filename = result.file.split(/[\\/]/).pop() ?? result.file;
   return (
-    <div className="flex items-center gap-2 p-2 rounded border border-[#1E293B] bg-[#020617] hover:border-[#334155] transition-colors">
+    <div className={`flex items-center gap-2 p-2 rounded border transition-colors ${
+      isFailed ? "border-red-500/20 bg-red-500/5 opacity-60" : "border-[#1E293B] bg-[#020617] hover:border-[#334155]"
+    }`}>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] text-[#94A3B8] truncate" title={filename}>{filename}</p>
         <div className="flex items-center gap-2 text-[10px] text-[#64748B] mt-0.5">
           <Badge variant="secondary" className="text-[9px] px-1 py-0">{result.format.toUpperCase()}</Badge>
           {result.bitrate && <span>{result.bitrate > 1000 ? `${Math.round(result.bitrate / 1000)} kbps` : `${result.bitrate} kbps`}</span>}
           <span>{formatSize(result.size)}</span>
-          <span className="text-[#475569]">{result.username}</span>
+          <span className={isFailed ? "text-red-400" : "text-[#475569]"}>{result.username}</span>
+          {isFailed && <Badge className="bg-red-500/20 text-red-400 text-[9px] px-1 py-0">Failed before</Badge>}
         </div>
       </div>
-      <Button size="sm" className="text-[10px] h-7 px-3 shrink-0" onClick={() => onDownload(result)} disabled={downloading !== null}>
-        {isDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : "Download"}
+      <Button size="sm" className="text-[10px] h-7 px-3 shrink-0" onClick={() => onDownload(result)} disabled={downloading !== null || isFailed}>
+        {isDownloading ? <Loader2 className="w-3 h-3 animate-spin" /> : isFailed ? "Failed" : "Download"}
       </Button>
     </div>
   );

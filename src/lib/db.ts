@@ -105,6 +105,14 @@ const schema = `
     FOREIGN KEY (spotify_track_id) REFERENCES spotify_tracks(id)
   );
 
+  CREATE TABLE IF NOT EXISTS failed_users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    spotify_track_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(spotify_track_id, username)
+  );
+
   CREATE TABLE IF NOT EXISTS duplicate_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     resolution TEXT,

@@ -19,7 +19,9 @@ import {
   Music,
   RotateCcw,
   ExternalLink,
+  FolderOpen,
 } from "lucide-react";
+import Link from "next/link";
 
 interface DownloadRecord {
   id: number;
@@ -309,6 +311,19 @@ export default function DownloadsPage() {
                   )}
 
                   <div className="flex items-center gap-1">
+                    {dl.status === "complete" && dl.download_path && (
+                      <button
+                        onClick={() => fetch("/api/open-folder", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ filePath: dl.download_path }),
+                        })}
+                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-[#F8FAFC] transition-colors"
+                        title="Open folder"
+                      >
+                        <FolderOpen className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     {dl.status === "complete" && dl.spotify_id && (
                       <a
                         href={`https://open.spotify.com/track/${dl.spotify_id}`}
@@ -319,6 +334,15 @@ export default function DownloadsPage() {
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </a>
+                    )}
+                    {dl.status === "failed" && (
+                      <Link
+                        href={`/sync?track=${dl.spotify_track_id}`}
+                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-[#22C55E] transition-colors"
+                        title="Retry with different source"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </Link>
                     )}
                     {(dl.status === "queued" || dl.status === "downloading") && (
                       <button

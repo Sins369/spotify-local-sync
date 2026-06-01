@@ -1,7 +1,9 @@
 import { normalizeForKey } from "./normalize";
 import type { LocalTrack } from "@/types";
 
-const DURATION_THRESHOLD_MS = 5000;
+const EXACT_DURATION_THRESHOLD_MS = 5000;
+const LOOSE_DURATION_THRESHOLD_MS = 60000;
+const MIN_ISRC_LENGTH = 8;
 
 const FORMAT_SCORES: Record<string, number> = {
   flac: 100,
@@ -22,31 +24,57 @@ export interface DuplicateGroupResult {
 }
 
 export function findDuplicateGroups(tracks: LocalTrack[]): DuplicateGroupResult[] {
-  // Group by normalized title+artist key
-  const keyMap = new Map<string, LocalTrack[]>();
+  const seenTrackIds = new Set<number>();
+  const results: DuplicateGroupResult[] = [];
 
+  // Pass 1: ISRC-based grouping (same recording, always a duplicate)
+  const isrcMap = new Map<string, LocalTrack[]>();
   for (const track of tracks) {
-    if (!track.title || !track.artist) continue;
-    const key = normalizeForKey(track.title, track.artist);
-    const existing = keyMap.get(key);
-    if (existing) {
-      existing.push(track);
-    } else {
-      keyMap.set(key, [track]);
-    }
+    if (!track.isrc || track.isrc.length < MIN_ISRC_LENGTH) continue;
+    const isrc = track.isrc.toUpperCase();
+    const existing = isrcMap.get(isrc);
+    if (existing) existing.push(track);
+    else isrcMap.set(isrc, [track]);
   }
 
-  const results: DuplicateGroupResult[] = [];
+  for (const [isrc, group] of isrcMap) {
+    if (group.length < 2) continue;
+    results.push({ key: `isrc:${isrc}`, members: group });
+    group.forEach(t => seenTrackIds.add(t.id));
+  }
+
+  // Pass 2: Title+artist grouping with duration matching
+  const keyMap = new Map<string, LocalTrack[]>();
+  for (const track of tracks) {
+    if (!track.title || !track.artist) continue;
+    if (seenTrackIds.has(track.id)) continue;
+    const key = normalizeForKey(track.title, track.artist);
+    const existing = keyMap.get(key);
+    if (existing) existing.push(track);
+    else keyMap.set(key, [track]);
+  }
 
   for (const [key, group] of keyMap) {
     if (group.length < 2) continue;
 
-    // Sub-group by duration within threshold
-    const subGroups = subGroupByDuration(group);
-
-    for (const subGroup of subGroups) {
+    // Exact duration matches first (definite duplicates)
+    const exactGroups = subGroupByDuration(group, EXACT_DURATION_THRESHOLD_MS);
+    for (const subGroup of exactGroups) {
       if (subGroup.length >= 2) {
         results.push({ key, members: subGroup });
+        subGroup.forEach(t => seenTrackIds.add(t.id));
+      }
+    }
+
+    // Remaining: same title+artist but different durations (likely remixes/edits)
+    const remaining = group.filter(t => !seenTrackIds.has(t.id));
+    if (remaining.length >= 2) {
+      const looseGroups = subGroupByDuration(remaining, LOOSE_DURATION_THRESHOLD_MS);
+      for (const subGroup of looseGroups) {
+        if (subGroup.length >= 2) {
+          results.push({ key: `review:${key}`, members: subGroup });
+          subGroup.forEach(t => seenTrackIds.add(t.id));
+        }
       }
     }
   }
@@ -54,7 +82,7 @@ export function findDuplicateGroups(tracks: LocalTrack[]): DuplicateGroupResult[
   return results;
 }
 
-function subGroupByDuration(tracks: LocalTrack[]): LocalTrack[][] {
+function subGroupByDuration(tracks: LocalTrack[], threshold: number): LocalTrack[][] {
   const groups: LocalTrack[][] = [];
   const used = new Set<number>();
 
@@ -70,7 +98,7 @@ function subGroupByDuration(tracks: LocalTrack[]): LocalTrack[][] {
       const durationA = tracks[i].duration_ms ?? 0;
       const durationB = tracks[j].duration_ms ?? 0;
 
-      if (Math.abs(durationA - durationB) <= DURATION_THRESHOLD_MS) {
+      if (Math.abs(durationA - durationB) <= threshold) {
         cluster.push(tracks[j]);
         used.add(j);
       }

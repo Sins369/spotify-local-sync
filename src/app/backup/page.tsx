@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Loader2, RefreshCw } from "lucide-react";
 
 interface BackupStatus {
@@ -32,9 +32,41 @@ export default function BackupPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<{ copied: number; total: number; file: string } | null>(null);
+  const esRef = useRef<EventSource | null>(null);
+
+  function connectToProgress() {
+    if (esRef.current) return;
+    const eventSource = new EventSource("/api/backup/progress");
+    esRef.current = eventSource;
+    eventSource.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.copied != null && data.total != null) {
+          const filename = (data.file ?? "").split(/[\\/]/).pop() ?? "";
+          setSyncProgress({ copied: data.copied, total: data.total, file: filename });
+          setSyncing(true);
+        }
+        if (data.done) {
+          eventSource.close();
+          esRef.current = null;
+          setSyncing(false);
+          setSyncProgress(null);
+          fetchAll();
+        }
+      } catch {}
+    };
+    eventSource.onerror = () => {
+      eventSource.close();
+      esRef.current = null;
+    };
+  }
 
   useEffect(() => {
     fetchAll();
+    return () => {
+      esRef.current?.close();
+      esRef.current = null;
+    };
   }, []);
 
   async function fetchAll() {
@@ -53,6 +85,10 @@ export default function BackupPage() {
           up_to_date: data.up_to_date ?? 0,
           files_to_copy: data.files_to_copy ?? 0,
         });
+        if (data.running) {
+          setSyncing(true);
+          connectToProgress();
+        }
       }
 
       if (historyRes.ok) {
@@ -84,29 +120,7 @@ export default function BackupPage() {
       setSyncing(false);
       return;
     }
-
-    const eventSource = new EventSource("/api/backup/progress");
-    eventSource.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.copied != null && data.total != null) {
-          const filename = (data.file ?? "").split(/[\\/]/).pop() ?? "";
-          setSyncProgress({ copied: data.copied, total: data.total, file: filename });
-        }
-        if (data.done) {
-          eventSource.close();
-          setSyncing(false);
-          setSyncProgress(null);
-          fetchAll();
-        }
-      } catch {}
-    };
-    eventSource.onerror = () => {
-      eventSource.close();
-      setSyncing(false);
-      setSyncProgress(null);
-      fetchAll();
-    };
+    connectToProgress();
   }
 
   async function handleCancel() {
@@ -204,7 +218,7 @@ export default function BackupPage() {
               {syncing ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Starting sync...
+                  Comparing files...
                 </>
               ) : (
                 <>

@@ -7,7 +7,7 @@ import { extractMetadata } from "./scanner";
 import path from "path";
 import fs from "fs";
 
-const MAX_AUTO_RETRIES = 3;
+const MAX_AUTO_RETRIES = 6;
 
 const globalForWorker = globalThis as unknown as { __downloadWorkerRunning: boolean };
 
@@ -216,23 +216,40 @@ async function findAlternateSource(
 
   if (failedUsernames.size >= MAX_AUTO_RETRIES) return null;
 
-  const track = db.prepare("SELECT title, artist FROM spotify_tracks WHERE id = ?")
-    .get(spotifyTrackId) as { title: string; artist: string } | undefined;
+  const track = db.prepare("SELECT title, artist, album FROM spotify_tracks WHERE id = ?")
+    .get(spotifyTrackId) as { title: string; artist: string; album: string | null } | undefined;
   if (!track) return null;
 
-  try {
-    const results = await searchSoulseek(`${track.artist} ${track.title}`);
-    const candidate = results.find((r) => !failedUsernames.has(r.username));
-    if (candidate) {
-      return {
-        username: candidate.username,
-        file: candidate.file,
-        size: candidate.size,
-        format: candidate.format,
-        bitrate: candidate.bitrate,
-      };
-    }
-  } catch {}
+  const firstArtist = track.artist.split(",")[0].trim();
+
+  // Try multiple search queries — different variations find different peers
+  const queries = [
+    `${track.artist} ${track.title}`,
+    `${firstArtist} ${track.title}`,
+    `${track.title} ${firstArtist}`,
+  ];
+  if (track.album) {
+    queries.push(`${firstArtist} ${track.album} ${track.title}`);
+  }
+
+  for (const query of queries) {
+    try {
+      const results = await searchSoulseek(query);
+      const candidate = results.find((r) =>
+        !failedUsernames.has(r.username) && r.size > 500000
+      );
+      if (candidate) {
+        return {
+          username: candidate.username,
+          file: candidate.file,
+          size: candidate.size,
+          format: candidate.format,
+          bitrate: candidate.bitrate,
+        };
+      }
+    } catch {}
+    await sleep(2000);
+  }
 
   return null;
 }

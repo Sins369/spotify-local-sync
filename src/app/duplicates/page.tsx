@@ -435,8 +435,8 @@ export default function DuplicatesPage() {
                             >
                               {qualityPercent(member.quality_score)}
                             </span>
-                            {/* BEST indicator */}
-                            {isBest && (
+                            {/* BEST indicator or Keep button */}
+                            {isBest ? (
                               <span className="inline-flex items-center gap-1">
                                 <span
                                   className="inline-block w-1.5 h-1.5 rounded-full"
@@ -452,6 +452,21 @@ export default function DuplicatesPage() {
                                   BEST
                                 </span>
                               </span>
+                            ) : (
+                              <button
+                                disabled={resolving}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  stopPlayback();
+                                  handleResolve(group.id, "keep_one", member.local_track_id);
+                                }}
+                                className="font-medium transition-colors disabled:opacity-50"
+                                style={{ fontSize: "10px", color: "#8888a0" }}
+                                onMouseEnter={(e) => { (e.target as HTMLElement).style.color = "#34d399"; }}
+                                onMouseLeave={(e) => { (e.target as HTMLElement).style.color = "#8888a0"; }}
+                              >
+                                Keep this
+                              </button>
                             )}
                           </div>
                         </div>

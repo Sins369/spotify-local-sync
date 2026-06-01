@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { eventBus } from "./event-bus";
+import { getDb } from "./db";
 
 export interface FileChange {
   src: string;
@@ -83,12 +84,15 @@ export async function runBackupSync(
   globalForBackup.__backupCancelled = false;
   globalForBackup.__backupRunning = true;
 
+  const startTime = Date.now();
   const changes = detectChanges(sourceFiles, sourceRoot, destRoot);
   let copied = 0;
+  let newFiles = 0;
   let errors = 0;
 
   for (const change of changes.toCopy) {
     if (globalForBackup.__backupCancelled) {
+      logBackupHistory(copied, newFiles, errors, "cancelled", Date.now() - startTime);
       eventBus.emit("backup:complete", {
         copied,
         errors,
@@ -102,6 +106,7 @@ export async function runBackupSync(
     try {
       await copyFile(change.src, change.dest);
       copied++;
+      if (change.reason === "new") newFiles++;
       eventBus.emit("backup:progress", {
         file: change.src,
         reason: change.reason,
@@ -119,6 +124,8 @@ export async function runBackupSync(
     if (copied % 5 === 0) await yieldEvent();
   }
 
+  logBackupHistory(copied, newFiles, errors, errors > 0 ? "partial" : "complete", Date.now() - startTime);
+
   eventBus.emit("backup:complete", {
     copied,
     errors,
@@ -127,4 +134,13 @@ export async function runBackupSync(
 
   globalForBackup.__backupRunning = false;
   return { copied, errors, upToDate: changes.upToDate };
+}
+
+function logBackupHistory(filesSynced: number, filesNew: number, filesFailed: number, status: string, durationMs: number) {
+  try {
+    const db = getDb();
+    db.prepare(
+      "INSERT INTO backup_history (files_synced, files_new, files_failed, status, duration_ms) VALUES (?, ?, ?, ?, ?)"
+    ).run(filesSynced, filesNew, filesFailed, status, durationMs);
+  } catch {}
 }

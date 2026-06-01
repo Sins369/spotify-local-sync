@@ -19,50 +19,18 @@ A self-hosted web app that bridges your local music collection with Spotify. Sca
 
 ## Screenshots
 
-<details>
-<summary>Click to view all pages</summary>
+> Click any image to view full size
 
-### Sync — Download missing tracks
-Split panel with search, quality filter, sort, Spotify preview, and Soulseek results.
-
-![Sync](docs/screenshots/sync.png)
-
-### Sync — Track detail with preview
-Album art, 30s audio preview (Spotify/Apple Music), best match button, and Soulseek search results.
-
-![Sync Detail](docs/screenshots/sync-detail.png)
-
-### Downloads — Queue management
-Two-column layout with active/queued/failed on the left, completed on the right.
-
-![Downloads](docs/screenshots/downloads.png)
-
-### Library — Unified collection browser
-All local + Spotify tracks in one sortable, filterable table with toggleable columns.
-
-![Library](docs/screenshots/library.png)
-
-### Metadata — Tag comparison
-Card-based layout showing field diffs (title, artist, album, genre, artwork) with per-field Apply buttons.
-
-![Metadata](docs/screenshots/metadata.png)
-
-### Duplicates — Find and resolve
-ISRC-based and title+artist matching with quality scores, audio preview, and review badges.
-
-![Duplicates](docs/screenshots/duplicates.png)
-
-### Backup — File sync with progress
-Non-blocking sync with real-time progress bar, history log, and cancel support.
-
-![Backup](docs/screenshots/backup.png)
-
-### Settings — Configuration
-Spotify connection, native folder picker, file template with detection, Soulseek sharing, danger zone.
-
-![Settings](docs/screenshots/settings.png)
-
-</details>
+| | |
+|---|---|
+| **Sync** — Search, filter, download from Soulseek | **Sync Detail** — Album art, preview, search results |
+| [![Sync](docs/screenshots/sync.png)](docs/screenshots/sync.png) | [![Sync Detail](docs/screenshots/sync-detail.png)](docs/screenshots/sync-detail.png) |
+| **Downloads** — Queue with active, failed, completed | **Library** — Unified sortable/filterable table |
+| [![Downloads](docs/screenshots/downloads.png)](docs/screenshots/downloads.png) | [![Library](docs/screenshots/library.png)](docs/screenshots/library.png) |
+| **Metadata** — Tag diffs with genre and artwork | **Duplicates** — ISRC + duration matching |
+| [![Metadata](docs/screenshots/metadata.png)](docs/screenshots/metadata.png) | [![Duplicates](docs/screenshots/duplicates.png)](docs/screenshots/duplicates.png) |
+| **Backup** — Non-blocking sync with progress | |
+| [![Backup](docs/screenshots/backup.png)](docs/screenshots/backup.png) | |
 
 ## Tech Stack
 

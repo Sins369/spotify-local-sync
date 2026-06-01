@@ -22,7 +22,6 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
-  Zap,
 } from "lucide-react";
 import type { SoulseekResult } from "@/types";
 
@@ -61,8 +60,6 @@ export default function SyncPage() {
   const [downloadedIds, setDownloadedIds] = useState<Set<number>>(new Set());
   const [page, setPage] = useState(0);
   const [searchCache, setSearchCache] = useState<Map<number, SoulseekResult[]>>(new Map());
-  const [preloadingIds, setPreloadingIds] = useState<Set<number>>(new Set());
-  const preloadAbort = useRef<AbortController | null>(null);
 
   const fetchMissingLocally = useCallback(async () => {
     setLoadingLocal(true);
@@ -107,53 +104,21 @@ export default function SyncPage() {
   const totalPages = Math.ceil(filteredLocal.length / PAGE_SIZE);
   const pagedTracks = filteredLocal.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  // Preload Soulseek searches for current page in background
+  // Preload Spotify embeds for visible tracks (hidden iframes warm the browser cache)
+  const [preloadedSpotifyIds, setPreloadedSpotifyIds] = useState<Set<string>>(new Set());
   useEffect(() => {
     if (tab !== "download" || pagedTracks.length === 0) return;
-
-    preloadAbort.current?.abort();
-    const controller = new AbortController();
-    preloadAbort.current = controller;
-
-    const toPreload = pagedTracks.filter((t) => !searchCache.has(t.id));
-    if (toPreload.length === 0) return;
-
-    let cancelled = false;
-    async function preloadSequentially() {
-      for (const track of toPreload) {
-        if (cancelled) break;
-        if (searchCache.has(track.id)) continue;
-
-        setPreloadingIds((prev) => new Set(prev).add(track.id));
-        try {
-          const res = await fetch("/api/soulseek/search", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query: `${track.artist} ${track.title}` }),
-            signal: controller.signal,
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const results: SoulseekResult[] = Array.isArray(data) ? data : data.results ?? [];
-            setSearchCache((prev) => new Map(prev).set(track.id, results.slice(0, 30)));
-          }
-        } catch {
-          if (cancelled) break;
-        } finally {
-          setPreloadingIds((prev) => {
-            const next = new Set(prev);
-            next.delete(track.id);
-            return next;
-          });
-        }
-        // Delay between preload searches to avoid Soulseek rate limiting
-        if (!cancelled) await new Promise((r) => setTimeout(r, 2000));
-      }
+    const newIds = pagedTracks
+      .filter((t) => t.spotify_id && !preloadedSpotifyIds.has(t.spotify_id))
+      .map((t) => t.spotify_id);
+    if (newIds.length > 0) {
+      setPreloadedSpotifyIds((prev) => {
+        const next = new Set(prev);
+        newIds.forEach((id) => next.add(id));
+        return next;
+      });
     }
-
-    preloadSequentially();
-    return () => { cancelled = true; controller.abort(); };
-  }, [tab, page, pagedTracks.map((t) => t.id).join(",")]);
+  }, [tab, pagedTracks.map((t) => t.id).join(",")]);
 
   // Reset page when filter changes
   useEffect(() => { setPage(0); }, [searchFilter]);
@@ -181,7 +146,6 @@ export default function SyncPage() {
     return t.title?.toLowerCase().includes(q) || t.artist?.toLowerCase().includes(q) || t.album?.toLowerCase().includes(q);
   });
 
-  const preloadedCount = pagedTracks.filter((t) => searchCache.has(t.id)).length;
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -235,20 +199,7 @@ export default function SyncPage() {
               <Input placeholder="Search by title, artist, or album..." value={searchFilter} onChange={(e) => setSearchFilter(e.target.value)}
                 className="pl-9 bg-[#0F172A] border-[#334155] text-[#F8FAFC] h-10" />
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              {preloadingIds.size > 0 ? (
-                <div className="flex items-center gap-1.5 text-[#64748B]">
-                  <Loader2 className="w-3.5 h-3.5 text-[#22C55E] animate-spin" />
-                  <span className="text-xs">Preloading results...</span>
-                </div>
-              ) : preloadedCount === pagedTracks.length && pagedTracks.length > 0 ? (
-                <div className="flex items-center gap-1.5 text-[#22C55E]">
-                  <Zap className="w-3.5 h-3.5" />
-                  <span className="text-xs">Page ready</span>
-                </div>
-              ) : null}
-              <span className="text-xs text-[#64748B]">{filteredLocal.length} tracks</span>
-            </div>
+            <span className="text-xs text-[#64748B] shrink-0">{filteredLocal.length} tracks</span>
           </div>
 
           {/* Split panel */}
@@ -267,8 +218,6 @@ export default function SyncPage() {
                       </div>
                     ) : (
                       pagedTracks.map((track) => {
-                        const cached = searchCache.has(track.id);
-                        const isPreloading = preloadingIds.has(track.id);
                         const isSelected = selectedTrack?.id === track.id;
                         return (
                           <button key={track.id} onClick={() => setSelectedTrack(track)}
@@ -286,8 +235,6 @@ export default function SyncPage() {
                               <p className="text-sm font-medium text-[#F8FAFC] truncate">{track.title ?? "Unknown"}</p>
                               <p className="text-[11px] text-[#94A3B8] truncate">{track.artist ?? "Unknown"}</p>
                             </div>
-                            {isPreloading && <Loader2 className="w-3 h-3 text-[#475569] animate-spin shrink-0" />}
-                            {cached && !isPreloading && <Zap className="w-3 h-3 text-[#22C55E]/60 shrink-0" />}
                           </button>
                         );
                       })
@@ -323,12 +270,29 @@ export default function SyncPage() {
                   <div className="flex-1 flex flex-col items-center justify-center text-center p-8">
                     <Music className="w-12 h-12 text-[#1E293B] mb-3" />
                     <p className="text-[#64748B]">Select a track to preview and download</p>
-                    <p className="text-xs text-[#475569] mt-1">Soulseek results are preloading in the background</p>
+                    <p className="text-xs text-[#475569] mt-1">Click any track on the left to get started</p>
                   </div>
                 )}
               </div>
             </div>
           </Card>
+
+          {/* Hidden Spotify embed preloaders */}
+          <div className="hidden">
+            {pagedTracks
+              .filter((t) => t.spotify_id)
+              .map((t) => (
+                <iframe
+                  key={t.spotify_id}
+                  src={`https://open.spotify.com/embed/track/${t.spotify_id}?utm_source=generator&theme=0`}
+                  width="0"
+                  height="0"
+                  loading="lazy"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+              ))}
+          </div>
         </div>
       )}
 

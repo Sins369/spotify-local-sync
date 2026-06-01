@@ -216,6 +216,23 @@ async function processDownload(download: {
   }
 }
 
+async function ensureConnected(): Promise<boolean> {
+  if (isConnected()) return true;
+  const username = getSetting("soulseek_username");
+  const password = getSetting("soulseek_password");
+  if (!username || !password) return false;
+  const shareLibrary = getSetting("soulseek_share_library") === "true";
+  const musicPath = getSetting("music_source_path");
+  const sharedFolders = shareLibrary && musicPath ? [musicPath] : [];
+  try {
+    await Promise.race([
+      connectSoulseek(username, password, sharedFolders),
+      sleep(10000).then(() => { throw new Error("Connection timeout"); }),
+    ]);
+    return true;
+  } catch { return false; }
+}
+
 async function findAlternateSource(
   spotifyTrackId: number,
   currentFile: string,
@@ -229,13 +246,14 @@ async function findAlternateSource(
 
   if (failedUsernames.size >= MAX_AUTO_RETRIES) return null;
 
+  if (!await ensureConnected()) return null;
+
   const track = db.prepare("SELECT title, artist, album FROM spotify_tracks WHERE id = ?")
     .get(spotifyTrackId) as { title: string; artist: string; album: string | null } | undefined;
   if (!track) return null;
 
   const firstArtist = track.artist.split(",")[0].trim();
 
-  // Try multiple search queries — different variations find different peers
   const queries = [
     `${track.artist} ${track.title}`,
     `${firstArtist} ${track.title}`,

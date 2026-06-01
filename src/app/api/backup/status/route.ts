@@ -2,8 +2,6 @@ import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
 import { isBackupRunning } from "@/lib/backup-sync";
-import fs from "fs";
-import path from "path";
 
 export async function GET() {
   try {
@@ -20,14 +18,14 @@ export async function GET() {
     const db = getDb();
     const totalFiles = (db.prepare("SELECT COUNT(*) as c FROM local_tracks").get() as { c: number }).c;
 
-    // Quick estimate: count files in backup dest root to approximate up_to_date
-    let backedUp = 0;
-    try {
-      backedUp = countFilesQuick(backupPath);
-    } catch {}
+    // Use last successful backup to estimate backed-up count
+    const lastBackup = db.prepare(
+      "SELECT files_synced, files_failed FROM backup_history WHERE status IN ('complete', 'partial') ORDER BY created_at DESC LIMIT 1"
+    ).get() as { files_synced: number; files_failed: number } | undefined;
 
-    const upToDate = Math.min(backedUp, totalFiles);
-    const pending = Math.max(0, totalFiles - upToDate);
+    const backedUp = lastBackup ? totalFiles - (lastBackup.files_failed ?? 0) : 0;
+    const upToDate = Math.min(Math.max(0, backedUp), totalFiles);
+    const pending = totalFiles - upToDate;
 
     return NextResponse.json({
       total_files: totalFiles,
@@ -45,26 +43,4 @@ export async function GET() {
       { status: 500 }
     );
   }
-}
-
-function countFilesQuick(dir: string, max = 10000): number {
-  let count = 0;
-  const stack = [dir];
-  while (stack.length > 0 && count < max) {
-    const current = stack.pop()!;
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      if (entry.isDirectory()) {
-        stack.push(path.join(current, entry.name));
-      } else if (entry.isFile()) {
-        count++;
-      }
-    }
-  }
-  return count;
 }

@@ -40,11 +40,11 @@ export async function POST() {
       INSERT INTO spotify_tracks (
         spotify_id, title, artist, album, album_artist,
         track_number, disc_number, year, duration_ms, isrc,
-        popularity, synced_at
+        popularity, album_art_url, genre, synced_at
       ) VALUES (
         @spotify_id, @title, @artist, @album, @album_artist,
         @track_number, @disc_number, @year, @duration_ms, @isrc,
-        @popularity, datetime('now')
+        @popularity, @album_art_url, @genre, datetime('now')
       )
       ON CONFLICT(spotify_id) DO UPDATE SET
         title = @title,
@@ -57,11 +57,29 @@ export async function POST() {
         duration_ms = @duration_ms,
         isrc = @isrc,
         popularity = @popularity,
+        album_art_url = @album_art_url,
+        genre = COALESCE(@genre, genre),
         synced_at = datetime('now')
     `);
 
     let synced = 0;
     let skippedLocal = 0;
+
+    // Collect unique artist IDs for genre lookup
+    const artistIds = new Set<string>();
+    const trackArtistMap = new Map<string, string>();
+    for (const item of savedTracks) {
+      const track = item.track;
+      if (track.uri && track.uri.startsWith("spotify:local:")) continue;
+      const primaryArtist = track.artists[0];
+      if (primaryArtist?.id) {
+        artistIds.add(primaryArtist.id);
+        trackArtistMap.set(track.id, primaryArtist.id);
+      }
+    }
+
+    // Batch-fetch artist genres from Spotify
+    const artistGenres = await client.getArtistGenres([...artistIds]);
 
     const upsertAll = db.transaction(() => {
       for (const item of savedTracks) {
@@ -70,6 +88,11 @@ export async function POST() {
           skippedLocal++;
           continue;
         }
+
+        const artUrl = track.album.images?.[0]?.url ?? null;
+        const primaryArtistId = trackArtistMap.get(track.id);
+        const genres = primaryArtistId ? artistGenres.get(primaryArtistId) : null;
+        const genreStr = genres && genres.length > 0 ? genres[0] : null;
 
         upsertStmt.run({
           spotify_id: track.id,
@@ -83,6 +106,8 @@ export async function POST() {
           duration_ms: track.duration_ms,
           isrc: track.external_ids?.isrc ?? null,
           popularity: null,
+          album_art_url: artUrl,
+          genre: genreStr,
         });
         synced++;
       }

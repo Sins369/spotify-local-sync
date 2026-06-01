@@ -38,6 +38,19 @@ export function getDb(): Database.Database {
     `);
   }
 
+  const hasAlbumArt = db.prepare("SELECT COUNT(*) as c FROM pragma_table_info('spotify_tracks') WHERE name = 'album_art_url'").get() as { c: number };
+  if (hasAlbumArt.c === 0) {
+    db.exec(`
+      ALTER TABLE spotify_tracks ADD COLUMN album_art_url TEXT;
+      ALTER TABLE spotify_tracks ADD COLUMN genre TEXT;
+    `);
+  }
+
+  const hasLocalArtwork = db.prepare("SELECT COUNT(*) as c FROM pragma_table_info('local_tracks') WHERE name = 'has_artwork'").get() as { c: number };
+  if (hasLocalArtwork.c === 0) {
+    db.exec(`ALTER TABLE local_tracks ADD COLUMN has_artwork INTEGER DEFAULT 0`);
+  }
+
   // Reset downloads stuck in 'downloading' state (server restart recovery)
   db.prepare("UPDATE downloads SET status = 'failed', error = 'Server restarted' WHERE status = 'downloading' AND started_at < datetime('now', '-1 hour')").run();
   db.prepare("UPDATE downloads SET status = 'queued' WHERE status = 'downloading'").run();

@@ -137,11 +137,11 @@ export async function scanLibrary(
     INSERT INTO local_tracks (
       path, filename, title, artist, album, album_artist,
       track_number, disc_number, year, genre, duration_ms,
-      bitrate, sample_rate, codec, isrc, size_bytes, mtime_ms, scanned_at
+      bitrate, sample_rate, codec, isrc, size_bytes, mtime_ms, has_artwork, scanned_at
     ) VALUES (
       @path, @filename, @title, @artist, @album, @album_artist,
       @track_number, @disc_number, @year, @genre, @duration_ms,
-      @bitrate, @sample_rate, @codec, @isrc, @size_bytes, @mtime_ms, datetime('now')
+      @bitrate, @sample_rate, @codec, @isrc, @size_bytes, @mtime_ms, @has_artwork, datetime('now')
     )
     ON CONFLICT(path) DO UPDATE SET
       filename = @filename,
@@ -160,6 +160,7 @@ export async function scanLibrary(
       isrc = @isrc,
       size_bytes = @size_bytes,
       mtime_ms = @mtime_ms,
+      has_artwork = @has_artwork,
       scanned_at = datetime('now')
   `);
 
@@ -205,6 +206,7 @@ export async function scanLibrary(
       isrc: meta.isrc,
       size_bytes: meta.size,
       mtime_ms: meta.mtime_ms,
+      has_artwork: meta.has_artwork ? 1 : 0,
     });
 
     scanned++;

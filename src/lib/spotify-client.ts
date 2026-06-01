@@ -18,7 +18,7 @@ export interface SpotifyTrackResult {
   id: string;
   uri: string;
   name: string;
-  artists: { name: string }[];
+  artists: { id: string; name: string }[];
   album: {
     name: string;
     images: { url: string; width: number; height: number }[];
@@ -172,6 +172,32 @@ export class SpotifyClient {
         await delay(PAGE_DELAY_MS);
       }
     }
+  }
+
+  async getArtistGenres(
+    artistIds: string[],
+    fetchFn: typeof fetch = globalThis.fetch
+  ): Promise<Map<string, string[]>> {
+    const genreMap = new Map<string, string[]>();
+    for (let i = 0; i < artistIds.length; i += 50) {
+      const batch = artistIds.slice(i, i + 50);
+      const params = new URLSearchParams({ ids: batch.join(",") });
+      const response = await this.fetchWithRetry(
+        `${SPOTIFY_API}/artists?${params.toString()}`,
+        { method: "GET", headers: this.getHeaders() },
+        fetchFn
+      );
+      if (response.ok) {
+        const data = await response.json();
+        for (const artist of data.artists ?? []) {
+          if (artist?.id && artist.genres?.length > 0) {
+            genreMap.set(artist.id, artist.genres);
+          }
+        }
+      }
+      if (i + 50 < artistIds.length) await delay(PAGE_DELAY_MS);
+    }
+    return genreMap;
   }
 
   async checkSaved(

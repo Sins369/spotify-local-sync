@@ -168,8 +168,13 @@ async function processDownload(download: {
       "INSERT OR IGNORE INTO failed_users (spotify_track_id, username) VALUES (?, ?)"
     ).run(download.spotify_track_id, download.source_user);
 
-    const isPeerGone = error.includes("User not exist") || error.includes("not responding") || error.includes("timed out");
-    if (isPeerGone) {
+    const isRetryable = error.includes("User not exist") || error.includes("not responding") || error.includes("timed out") || error.includes("stalled");
+    const retryCount = (db.prepare(
+      "SELECT COUNT(*) as c FROM failed_users WHERE spotify_track_id = ?"
+    ).get(download.spotify_track_id) as { c: number }).c;
+
+    if (isRetryable && retryCount < MAX_AUTO_RETRIES) {
+      // Reconnect if peer connection is gone
       if (error.includes("User not exist")) {
         try {
           const { disconnectSoulseek } = await import("./soulseek-client");
@@ -185,6 +190,10 @@ async function processDownload(download: {
         } catch {}
       }
 
+      // Wait longer between retries — peers come online at different times
+      const delayMs = Math.min(retryCount * 10000, 30000);
+      if (delayMs > 0) await sleep(delayMs);
+
       const altSource = await findAlternateSource(download.spotify_track_id, download.source_file);
       if (altSource) {
         db.prepare(
@@ -197,9 +206,13 @@ async function processDownload(download: {
       }
     }
 
+    const retriesLeft = MAX_AUTO_RETRIES - retryCount;
+    const finalError = retriesLeft > 0
+      ? `${error} (${retryCount} sources tried, no more available)`
+      : `${error} (all ${MAX_AUTO_RETRIES} sources exhausted)`;
     db.prepare(
       "UPDATE downloads SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?"
-    ).run(error, download.id);
+    ).run(finalError, download.id);
   }
 }
 

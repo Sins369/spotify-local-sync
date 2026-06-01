@@ -48,8 +48,12 @@ data/
 *.db-shm
 
 certificates.playwright-mcp
+.playwright-mcp/
 test-screenshots
 test-*.png
 debug-*.mjs
-gamepak-*.mp3
+*.mp3
+design-bundle/
+design-prototype.html
+check-*.mjs
 test-pages.mjs

@@ -47,4 +47,9 @@ data/
 *.db-wal
 *.db-shm
 
-certificates
+certificates.playwright-mcp
+test-screenshots
+test-*.png
+debug-*.mjs
+gamepak-*.mp3
+test-pages.mjs

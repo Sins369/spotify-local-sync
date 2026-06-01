@@ -1,8 +1,0 @@
-[    1052ms] [WARNING] It is recommended that a robustness level be specified. Not specifying the robustness level could result in unexpected behavior. @ https://open.spotifycdn.com/cdn/build/web-player/vendor~web-player.03a68a86.js:0
-[    1053ms] [WARNING] com.microsoft.playready.recommendation: Internal testing is highly recommended prior to enabling PlayReady playback on Windows. Failure to do so may cause application instability or playback errors.
-
-Before generating a request, setServerCertificate() must be called with a valid server certificate. Otherwise, generateRequest() could fail. @ https://open.spotifycdn.com/cdn/build/web-player/vendor~web-player.03a68a86.js:0
-[    1053ms] [WARNING] com.microsoft.playready.recommendation.3000: Internal testing is highly recommended prior to enabling PlayReady playback on Windows. Failure to do so may cause application instability or playback errors.
-
-Before generating a request, setServerCertificate() must be called with a valid server certificate. Otherwise, generateRequest() could fail. @ https://open.spotifycdn.com/cdn/build/web-player/vendor~web-player.03a68a86.js:0
-[    1200ms] [LOG] Should auto-play but RC is not enabled @ https://open.spotifycdn.com/cdn/build/web-player/web-player.12146c27.js:4

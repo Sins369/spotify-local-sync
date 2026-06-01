@@ -3,7 +3,9 @@ import { getSetting } from "./settings";
 import { connectSoulseek, isConnected, searchSoulseek } from "./soulseek-client";
 import { streamDownload } from "./soulseek-download";
 import { writeTags } from "./metadata-writer";
+import { extractMetadata } from "./scanner";
 import path from "path";
+import fs from "fs";
 
 const MAX_AUTO_RETRIES = 3;
 
@@ -131,6 +133,34 @@ async function processDownload(download: {
     db.prepare(
       "UPDATE downloads SET status = 'complete', download_path = ?, bytes_received = file_size, completed_at = datetime('now') WHERE id = ?"
     ).run(destPath, download.id);
+
+    // Index the downloaded file in local_tracks and auto-match to the Spotify track
+    try {
+      const meta = await extractMetadata(destPath);
+      const stat = fs.statSync(destPath);
+      db.prepare(`
+        INSERT INTO local_tracks (path, filename, title, artist, album, album_artist,
+          track_number, disc_number, year, genre, duration_ms, bitrate, sample_rate,
+          codec, isrc, size_bytes, mtime_ms, has_artwork, scanned_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(path) DO UPDATE SET
+          title = excluded.title, artist = excluded.artist, album = excluded.album,
+          size_bytes = excluded.size_bytes, mtime_ms = excluded.mtime_ms,
+          has_artwork = excluded.has_artwork, scanned_at = datetime('now')
+      `).run(
+        meta.path, path.basename(destPath), meta.title, meta.artist, meta.album,
+        meta.album_artist, meta.track_no, meta.disc_no, meta.year, meta.genre,
+        meta.duration_ms, meta.bitrate, meta.sample_rate, meta.format, meta.isrc,
+        stat.size, Math.floor(stat.mtimeMs), meta.has_artwork ? 1 : 0
+      );
+      const localTrack = db.prepare("SELECT id FROM local_tracks WHERE path = ?").get(destPath) as { id: number } | undefined;
+      if (localTrack) {
+        db.prepare(
+          "INSERT OR IGNORE INTO matches (local_track_id, spotify_track_id, method, confidence, confirmed) VALUES (?, ?, 'download', 1.0, 1)"
+        ).run(localTrack.id, download.spotify_track_id);
+      }
+    } catch {}
+
 
   } catch (err) {
     const error = err instanceof Error ? err.message : "Download failed";

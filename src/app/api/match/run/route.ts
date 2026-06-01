@@ -237,6 +237,14 @@ export async function POST() {
       const key = `${normalizeTitle(lt.title)}||${normalizeArtist(lt.artist)}`;
       if (!localNormIndex.has(key)) localNormIndex.set(key, []);
       localNormIndex.get(key)!.push(lt);
+
+      // Also index by first artist for multi-artist matching
+      const firstArtist = lt.artist.split(",")[0].split(";")[0].trim();
+      const firstArtistKey = `${normalizeTitle(lt.title)}||${normalizeArtist(firstArtist)}`;
+      if (firstArtistKey !== key) {
+        if (!localNormIndex.has(firstArtistKey)) localNormIndex.set(firstArtistKey, []);
+        localNormIndex.get(firstArtistKey)!.push(lt);
+      }
     }
 
     const alreadyMatchedSpotify = new Set(
@@ -258,9 +266,11 @@ export async function POST() {
         }
       }
 
-      // Normalized title+artist reverse match
+      // Normalized title+artist reverse match (try full artist, then first artist)
       const key = `${normalizeTitle(st.title)}||${normalizeArtist(st.artist)}`;
-      const candidates = localNormIndex.get(key);
+      const firstArtist = st.artist.split(",")[0].trim();
+      const firstArtistKey = `${normalizeTitle(st.title)}||${normalizeArtist(firstArtist)}`;
+      const candidates = localNormIndex.get(key) ?? localNormIndex.get(firstArtistKey);
       if (candidates && candidates.length > 0) {
         const best = candidates[0];
         const score = scoreMatch(

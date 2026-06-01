@@ -16,31 +16,31 @@ describe("detectChanges", () => {
     fs.rmSync(DEST_DIR, { recursive: true, force: true });
   });
 
-  it("detects new files", () => {
+  it("detects new files", async () => {
     fs.writeFileSync(path.join(SRC_DIR, "Artist", "song.mp3"), "data");
-    const changes = detectChanges([path.join(SRC_DIR, "Artist", "song.mp3")], SRC_DIR, DEST_DIR);
+    const changes = await detectChanges([path.join(SRC_DIR, "Artist", "song.mp3")], SRC_DIR, DEST_DIR);
     expect(changes.toCopy).toHaveLength(1);
     expect(changes.toCopy[0].reason).toBe("new");
   });
-  it("detects modified files", () => {
+  it("detects modified files", async () => {
     const srcFile = path.join(SRC_DIR, "Artist", "song.mp3");
     const destFile = path.join(DEST_DIR, "Artist", "song.mp3");
     fs.mkdirSync(path.join(DEST_DIR, "Artist"), { recursive: true });
     fs.writeFileSync(srcFile, "original");
     fs.writeFileSync(destFile, "original");
     fs.writeFileSync(srcFile, "modified data");
-    const changes = detectChanges([srcFile], SRC_DIR, DEST_DIR);
+    const changes = await detectChanges([srcFile], SRC_DIR, DEST_DIR);
     expect(changes.toCopy).toHaveLength(1);
     expect(changes.toCopy[0].reason).toBe("modified");
   });
-  it("skips unchanged files", () => {
+  it("skips unchanged files", async () => {
     const srcFile = path.join(SRC_DIR, "Artist", "song.mp3");
     const destFile = path.join(DEST_DIR, "Artist", "song.mp3");
     fs.mkdirSync(path.join(DEST_DIR, "Artist"), { recursive: true });
     fs.writeFileSync(srcFile, "same data");
     fs.writeFileSync(destFile, "same data");
     fs.utimesSync(destFile, fs.statSync(srcFile).atime, fs.statSync(srcFile).mtime);
-    const changes = detectChanges([srcFile], SRC_DIR, DEST_DIR);
+    const changes = await detectChanges([srcFile], SRC_DIR, DEST_DIR);
     expect(changes.toCopy).toHaveLength(0);
   });
 });

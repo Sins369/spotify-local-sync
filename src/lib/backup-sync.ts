@@ -20,34 +20,36 @@ export interface BackupSyncResult {
   upToDate: number;
 }
 
-export function detectChanges(
+export async function detectChanges(
   sourceFiles: string[],
   sourceRoot: string,
   destRoot: string
-): ChangeResult {
+): Promise<ChangeResult> {
   const toCopy: FileChange[] = [];
   let upToDate = 0;
 
-  for (const srcFile of sourceFiles) {
+  for (let i = 0; i < sourceFiles.length; i++) {
+    const srcFile = sourceFiles[i];
     const relativePath = path.relative(sourceRoot, srcFile);
     const destFile = path.join(destRoot, relativePath);
 
-    if (!fs.existsSync(destFile)) {
+    try {
+      const destStat = await fs.promises.stat(destFile);
+      const srcStat = await fs.promises.stat(srcFile);
+
+      if (
+        srcStat.size !== destStat.size ||
+        Math.abs(srcStat.mtimeMs - destStat.mtimeMs) > 1000
+      ) {
+        toCopy.push({ src: srcFile, dest: destFile, reason: "modified" });
+      } else {
+        upToDate++;
+      }
+    } catch {
       toCopy.push({ src: srcFile, dest: destFile, reason: "new" });
-      continue;
     }
 
-    const srcStat = fs.statSync(srcFile);
-    const destStat = fs.statSync(destFile);
-
-    if (
-      srcStat.size !== destStat.size ||
-      Math.abs(srcStat.mtimeMs - destStat.mtimeMs) > 1000
-    ) {
-      toCopy.push({ src: srcFile, dest: destFile, reason: "modified" });
-    } else {
-      upToDate++;
-    }
+    if (i % 50 === 0) await yieldEvent();
   }
 
   return { toCopy, upToDate };
@@ -85,7 +87,7 @@ export async function runBackupSync(
   globalForBackup.__backupRunning = true;
 
   const startTime = Date.now();
-  const changes = detectChanges(sourceFiles, sourceRoot, destRoot);
+  const changes = await detectChanges(sourceFiles, sourceRoot, destRoot);
   let copied = 0;
   let newFiles = 0;
   let errors = 0;

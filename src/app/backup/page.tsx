@@ -21,7 +21,7 @@ interface HistoryEntry {
 
 interface Settings {
   music_source_path?: string;
-  backup_path?: string;
+  backup_dest_path?: string;
   [key: string]: string | undefined;
 }
 
@@ -169,7 +169,7 @@ export default function BackupPage() {
               />
               <ConfigRow
                 label="Destination path"
-                value={settings.backup_path || "Not configured"}
+                value={settings.backup_dest_path || "Not configured"}
               />
               <ConfigRow
                 label="Total size"

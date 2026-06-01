@@ -6,7 +6,7 @@ import { runBackupSync } from "@/lib/backup-sync";
 export async function POST() {
   try {
     const sourcePath = getSetting("music_source_path");
-    const backupPath = getSetting("backup_path");
+    const backupPath = getSetting("backup_dest_path");
 
     if (!sourcePath || !backupPath) {
       return NextResponse.json(

@@ -6,7 +6,7 @@ import { detectChanges } from "@/lib/backup-sync";
 export async function GET() {
   try {
     const sourcePath = getSetting("music_source_path");
-    const backupPath = getSetting("backup_path");
+    const backupPath = getSetting("backup_dest_path");
 
     if (!sourcePath || !backupPath) {
       return NextResponse.json(

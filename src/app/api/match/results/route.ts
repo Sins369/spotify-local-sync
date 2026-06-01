@@ -38,13 +38,17 @@ export async function GET(request: NextRequest) {
         break;
 
       case "missing_locally":
-        // Spotify tracks with no local match
+        // Spotify tracks with no local match and no completed/active download
         results = db
           .prepare(
             `SELECT st.*
              FROM spotify_tracks st
              LEFT JOIN matches m ON st.id = m.spotify_track_id
              WHERE m.id IS NULL
+             AND st.id NOT IN (
+               SELECT spotify_track_id FROM downloads
+               WHERE status IN ('complete', 'downloading', 'tagging', 'queued')
+             )
              ORDER BY st.title`
           )
           .all();

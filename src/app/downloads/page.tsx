@@ -21,7 +21,6 @@ import {
   ExternalLink,
   FolderOpen,
 } from "lucide-react";
-import Link from "next/link";
 
 interface DownloadRecord {
   id: number;
@@ -61,6 +60,7 @@ export default function DownloadsPage() {
   const [stats, setStats] = useState<QueueStats>({ active: 0, queued: 0, completed: 0, failed: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "active" | "completed" | "failed">("all");
+  const [retryingId, setRetryingId] = useState<number | null>(null);
 
   const fetchDownloads = useCallback(async () => {
     try {
@@ -336,13 +336,13 @@ export default function DownloadsPage() {
                       </a>
                     )}
                     {dl.status === "failed" && (
-                      <Link
-                        href={`/sync?track=${dl.spotify_track_id}`}
-                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-[#22C55E] transition-colors"
+                      <button
+                        onClick={() => setRetryingId(retryingId === dl.id ? null : dl.id)}
+                        className={`p-1 rounded hover:bg-[#1E293B] transition-colors ${retryingId === dl.id ? "text-[#22C55E]" : "text-[#64748B] hover:text-[#22C55E]"}`}
                         title="Retry with different source"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
-                      </Link>
+                      </button>
                     )}
                     {(dl.status === "queued" || dl.status === "downloading") && (
                       <button
@@ -369,8 +369,123 @@ export default function DownloadsPage() {
                   </span>
                 </div>
               </CardContent>
+              {retryingId === dl.id && (
+                <div className="border-t border-[#334155] p-4">
+                  <RetryPanel
+                    trackId={dl.spotify_track_id}
+                    title={dl.title ?? ""}
+                    artist={dl.artist ?? ""}
+                    onQueued={() => { setRetryingId(null); fetchDownloads(); }}
+                  />
+                </div>
+              )}
             </Card>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RetryPanel({ trackId, title, artist, onQueued }: {
+  trackId: number; title: string; artist: string; onQueued: () => void;
+}) {
+  const [results, setResults] = useState<Array<{ username: string; file: string; size: number; bitrate: number | null; format: string }>>([]);
+  const [searching, setSearching] = useState(true);
+  const [failedUsers, setFailedUsers] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/api/soulseek/failed-users?track_id=${trackId}`)
+      .then((r) => r.ok ? r.json() : [])
+      .then((users: string[]) => setFailedUsers(new Set(users)))
+      .catch(() => {});
+
+    fetch("/api/soulseek/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: `${artist} ${title}` }),
+    })
+      .then((r) => r.ok ? r.json() : { results: [] })
+      .then((data) => {
+        const all = Array.isArray(data) ? data : data.results ?? [];
+        setResults(all.slice(0, 20));
+      })
+      .catch(() => setError("Search failed"))
+      .finally(() => setSearching(false));
+  }, [trackId, title, artist]);
+
+  async function handleDownload(result: typeof results[0]) {
+    setDownloading(result.file);
+    setError(null);
+    try {
+      const res = await fetch("/api/soulseek/download", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          spotify_track_id: trackId,
+          username: result.username,
+          file: result.file,
+          file_size: result.size,
+          format: result.format,
+          bitrate: result.bitrate,
+        }),
+      });
+      if (res.ok) {
+        onQueued();
+      } else {
+        const data = await res.json();
+        setError(data.error || "Failed to queue");
+      }
+    } catch {
+      setError("Failed to queue download");
+    } finally {
+      setDownloading(null);
+    }
+  }
+
+  function formatSize(bytes: number): string {
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium text-[#94A3B8]">
+        {searching ? "Searching Soulseek..." : `${results.length} results — pick a new source`}
+      </p>
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {searching ? (
+        <div className="flex items-center gap-2 py-3 justify-center">
+          <Loader2 className="w-4 h-4 text-[#22C55E] animate-spin" />
+        </div>
+      ) : (
+        <div className="space-y-1 max-h-48 overflow-y-auto">
+          {results.map((r, i) => {
+            const isFailed = failedUsers.has(r.username);
+            const filename = r.file.split(/[\\/]/).pop() ?? r.file;
+            return (
+              <div key={i} className={`flex items-center gap-2 p-2 rounded border transition-colors ${
+                isFailed ? "border-red-500/20 bg-red-500/5 opacity-50" : "border-[#1E293B] bg-[#020617] hover:border-[#334155]"
+              }`}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] text-[#94A3B8] truncate">{filename}</p>
+                  <div className="flex items-center gap-2 text-[10px] text-[#64748B]">
+                    <Badge variant="secondary" className="text-[9px] px-1 py-0">{r.format.toUpperCase()}</Badge>
+                    {r.bitrate && <span>{r.bitrate > 1000 ? `${Math.round(r.bitrate / 1000)} kbps` : `${r.bitrate} kbps`}</span>}
+                    <span>{formatSize(r.size)}</span>
+                    <span className={isFailed ? "text-red-400" : "text-[#475569]"}>{r.username}</span>
+                    {isFailed && <Badge className="bg-red-500/20 text-red-400 text-[9px] px-1 py-0">Failed</Badge>}
+                  </div>
+                </div>
+                <Button size="sm" className="text-[10px] h-7 px-3 shrink-0"
+                  onClick={() => handleDownload(r)} disabled={downloading !== null || isFailed}>
+                  {downloading === r.file ? <Loader2 className="w-3 h-3 animate-spin" /> : "Download"}
+                </Button>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

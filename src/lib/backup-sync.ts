@@ -52,14 +52,27 @@ export function detectChanges(
   return { toCopy, upToDate };
 }
 
+const globalForBackup = globalThis as unknown as { __backupCancelled: boolean; __backupRunning: boolean };
+
+export function cancelBackup() {
+  globalForBackup.__backupCancelled = true;
+}
+
+export function isBackupRunning(): boolean {
+  return !!globalForBackup.__backupRunning;
+}
+
+function yieldEvent(): Promise<void> {
+  return new Promise((r) => setTimeout(r, 0));
+}
+
 export async function copyFile(src: string, dest: string): Promise<void> {
   const destDir = path.dirname(dest);
   fs.mkdirSync(destDir, { recursive: true });
-  fs.copyFileSync(src, dest);
+  await fs.promises.copyFile(src, dest);
 
-  // Preserve mtime
-  const srcStat = fs.statSync(src);
-  fs.utimesSync(dest, srcStat.atime, srcStat.mtime);
+  const srcStat = await fs.promises.stat(src);
+  await fs.promises.utimes(dest, srcStat.atime, srcStat.mtime);
 }
 
 export async function runBackupSync(
@@ -67,11 +80,25 @@ export async function runBackupSync(
   sourceRoot: string,
   destRoot: string
 ): Promise<BackupSyncResult> {
+  globalForBackup.__backupCancelled = false;
+  globalForBackup.__backupRunning = true;
+
   const changes = detectChanges(sourceFiles, sourceRoot, destRoot);
   let copied = 0;
   let errors = 0;
 
   for (const change of changes.toCopy) {
+    if (globalForBackup.__backupCancelled) {
+      eventBus.emit("backup:complete", {
+        copied,
+        errors,
+        upToDate: changes.upToDate,
+        cancelled: true,
+      });
+      globalForBackup.__backupRunning = false;
+      return { copied, errors, upToDate: changes.upToDate };
+    }
+
     try {
       await copyFile(change.src, change.dest);
       copied++;
@@ -88,6 +115,8 @@ export async function runBackupSync(
         error: err,
       });
     }
+
+    if (copied % 5 === 0) await yieldEvent();
   }
 
   eventBus.emit("backup:complete", {
@@ -96,5 +125,6 @@ export async function runBackupSync(
     upToDate: changes.upToDate,
   });
 
+  globalForBackup.__backupRunning = false;
   return { copied, errors, upToDate: changes.upToDate };
 }

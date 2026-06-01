@@ -74,30 +74,43 @@ export default function BackupPage() {
   async function handleSync() {
     setSyncing(true);
     setSyncProgress(null);
+    try {
+      const res = await fetch("/api/backup/sync", { method: "POST" });
+      if (!res.ok) {
+        setSyncing(false);
+        return;
+      }
+    } catch {
+      setSyncing(false);
+      return;
+    }
+
     const eventSource = new EventSource("/api/backup/progress");
     eventSource.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        if (data.done) {
-          eventSource.close();
-          return;
-        }
         if (data.copied != null && data.total != null) {
           const filename = (data.file ?? "").split(/[\\/]/).pop() ?? "";
           setSyncProgress({ copied: data.copied, total: data.total, file: filename });
         }
+        if (data.done) {
+          eventSource.close();
+          setSyncing(false);
+          setSyncProgress(null);
+          fetchAll();
+        }
       } catch {}
     };
-    try {
-      await fetch("/api/backup/sync", { method: "POST" });
-      await fetchAll();
-    } catch {
-      // sync failed
-    } finally {
+    eventSource.onerror = () => {
       eventSource.close();
       setSyncing(false);
       setSyncProgress(null);
-    }
+      fetchAll();
+    };
+  }
+
+  async function handleCancel() {
+    await fetch("/api/backup/sync", { method: "DELETE" });
   }
 
   const sourceFiles = status?.total_files ?? 0;
@@ -162,9 +175,14 @@ export default function BackupPage() {
                 <span className="text-[#e0e0e8] font-semibold">
                   Syncing... {syncProgress.copied} / {syncProgress.total}
                 </span>
-                <span className="text-[#8888a0] font-mono">
-                  {syncProgress.total > 0 ? Math.round((syncProgress.copied / syncProgress.total) * 100) : 0}%
-                </span>
+                <div className="flex items-center gap-3">
+                  <span className="text-[#8888a0] font-mono">
+                    {syncProgress.total > 0 ? Math.round((syncProgress.copied / syncProgress.total) * 100) : 0}%
+                  </span>
+                  <button onClick={handleCancel} className="text-[11px] text-[#e05566] hover:underline">
+                    Cancel
+                  </button>
+                </div>
               </div>
               <div className="w-full h-2 bg-[#24243a] rounded-full overflow-hidden">
                 <div

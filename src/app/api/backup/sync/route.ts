@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSetting } from "@/lib/settings";
 import { discoverFiles } from "@/lib/scanner";
-import { runBackupSync } from "@/lib/backup-sync";
+import { runBackupSync, cancelBackup, isBackupRunning } from "@/lib/backup-sync";
 
 export async function POST() {
   try {
+    if (isBackupRunning()) {
+      return NextResponse.json({ error: "Backup already in progress" }, { status: 409 });
+    }
+
     const sourcePath = getSetting("music_source_path");
     const backupPath = getSetting("backup_dest_path");
 
@@ -16,12 +20,13 @@ export async function POST() {
     }
 
     const sourceFiles = await discoverFiles(sourcePath);
-    const result = await runBackupSync(sourceFiles, sourcePath, backupPath);
+
+    // Fire and forget — don't await
+    runBackupSync(sourceFiles, sourcePath, backupPath).catch(() => {});
 
     return NextResponse.json({
-      copied: result.copied,
-      errors: result.errors,
-      up_to_date: result.upToDate,
+      started: true,
+      total_files: sourceFiles.length,
     });
   } catch (error) {
     return NextResponse.json(
@@ -33,4 +38,9 @@ export async function POST() {
       { status: 500 }
     );
   }
+}
+
+export async function DELETE() {
+  cancelBackup();
+  return NextResponse.json({ cancelled: true });
 }

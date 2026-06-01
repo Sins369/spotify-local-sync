@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { TopNav } from "@/components/layout/topnav";
+import { GlobalProgress } from "@/components/layout/global-progress";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "next-themes";
 
@@ -35,6 +36,7 @@ export default function RootLayout({
             <TopNav />
             <main className="p-8 overflow-auto">{children}</main>
           </div>
+          <GlobalProgress />
           <Toaster />
         </ThemeProvider>
       </body>

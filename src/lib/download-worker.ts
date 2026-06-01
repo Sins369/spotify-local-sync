@@ -168,8 +168,23 @@ async function processDownload(download: {
       "INSERT OR IGNORE INTO failed_users (spotify_track_id, username) VALUES (?, ?)"
     ).run(download.spotify_track_id, download.source_user);
 
-    const isUserBlock = error.includes("not responding") || error.includes("timed out");
-    if (isUserBlock) {
+    const isPeerGone = error.includes("User not exist") || error.includes("not responding") || error.includes("timed out");
+    if (isPeerGone) {
+      if (error.includes("User not exist")) {
+        try {
+          const { disconnectSoulseek } = await import("./soulseek-client");
+          await disconnectSoulseek();
+          const username = getSetting("soulseek_username");
+          const password = getSetting("soulseek_password");
+          const shareLibrary = getSetting("soulseek_share_library") === "true";
+          const musicPath2 = getSetting("music_source_path");
+          const sharedFolders = shareLibrary && musicPath2 ? [musicPath2] : [];
+          if (username && password) {
+            await connectSoulseek(username, password, sharedFolders);
+          }
+        } catch {}
+      }
+
       const altSource = await findAlternateSource(download.spotify_track_id, download.source_file);
       if (altSource) {
         db.prepare(

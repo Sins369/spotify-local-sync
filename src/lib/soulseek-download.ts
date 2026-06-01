@@ -122,24 +122,28 @@ export async function streamDownload(
 
     activeStreams.set(downloadId, { destroy: () => cleanup() });
 
-    client.download(
-      { file: { user: username, file } },
-      (err: Error | null, data: Buffer) => {
-        if (err) {
-          settle(err);
-          return;
+    try {
+      client.download(
+        { file: { user: username, file } },
+        (err: Error | null, data: Buffer) => {
+          if (err) {
+            settle(err);
+            return;
+          }
+          hasReceivedData = true;
+          clearTimeout(timeoutTimer);
+          bytesReceived = data.length;
+          progress.bytesReceived = bytesReceived;
+          progress.percent = 100;
+          progress.speed = bytesReceived > 0 ? Math.round(bytesReceived / ((Date.now() - startedAt) / 1000)) : 0;
+          activeProgress.set(downloadId, { ...progress });
+          onProgress?.({ ...progress });
+          writeStream!.end(data, () => settle());
         }
-        hasReceivedData = true;
-        resetTimeout();
-        bytesReceived = data.length;
-        progress.bytesReceived = bytesReceived;
-        progress.percent = 100;
-        progress.speed = bytesReceived > 0 ? Math.round(bytesReceived / ((Date.now() - startedAt) / 1000)) : 0;
-        activeProgress.set(downloadId, { ...progress });
-        onProgress?.({ ...progress });
-        writeStream!.end(data, () => settle());
-      }
-    );
+      );
+    } catch (e) {
+      settle(e instanceof Error ? e : new Error(String(e)));
+    }
   });
 }
 

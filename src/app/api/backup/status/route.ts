@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { getDb } from "@/lib/db";
 import { getSetting } from "@/lib/settings";
-import { discoverFiles } from "@/lib/scanner";
-import { detectChanges } from "@/lib/backup-sync";
+import { isBackupRunning } from "@/lib/backup-sync";
+import fs from "fs";
+import path from "path";
 
 export async function GET() {
   try {
@@ -15,18 +17,23 @@ export async function GET() {
       );
     }
 
-    const sourceFiles = await discoverFiles(sourcePath);
-    const changes = detectChanges(sourceFiles, sourcePath, backupPath);
+    const db = getDb();
+    const totalFiles = (db.prepare("SELECT COUNT(*) as c FROM local_tracks").get() as { c: number }).c;
+
+    // Quick estimate: count files in backup dest root to approximate up_to_date
+    let backedUp = 0;
+    try {
+      backedUp = countFilesQuick(backupPath);
+    } catch {}
+
+    const upToDate = Math.min(backedUp, totalFiles);
+    const pending = Math.max(0, totalFiles - upToDate);
 
     return NextResponse.json({
-      total_files: sourceFiles.length,
-      files_to_copy: changes.toCopy.length,
-      up_to_date: changes.upToDate,
-      changes: changes.toCopy.map((c) => ({
-        source: c.src,
-        destination: c.dest,
-        reason: c.reason,
-      })),
+      total_files: totalFiles,
+      files_to_copy: pending,
+      up_to_date: upToDate,
+      running: isBackupRunning(),
     });
   } catch (error) {
     return NextResponse.json(
@@ -38,4 +45,26 @@ export async function GET() {
       { status: 500 }
     );
   }
+}
+
+function countFilesQuick(dir: string, max = 10000): number {
+  let count = 0;
+  const stack = [dir];
+  while (stack.length > 0 && count < max) {
+    const current = stack.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        stack.push(path.join(current, entry.name));
+      } else if (entry.isFile()) {
+        count++;
+      }
+    }
+  }
+  return count;
 }

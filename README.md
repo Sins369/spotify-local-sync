@@ -27,6 +27,11 @@ Split panel with search, quality filter, sort, Spotify preview, and Soulseek res
 
 ![Sync](docs/screenshots/sync.png)
 
+### Sync — Track detail with preview
+Album art, 30s audio preview (Spotify/Apple Music), best match button, and Soulseek search results.
+
+![Sync Detail](docs/screenshots/sync-detail.png)
+
 ### Downloads — Queue management
 Two-column layout with active/queued/failed on the left, completed on the right.
 

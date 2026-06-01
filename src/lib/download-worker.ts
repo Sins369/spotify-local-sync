@@ -70,7 +70,7 @@ async function processQueue(): Promise<void> {
   }
 
   for (const download of queued) {
-    processDownload(download);
+    await processDownload(download);
   }
 }
 

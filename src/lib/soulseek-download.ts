@@ -51,6 +51,27 @@ export async function streamDownload(
     let lastProgressUpdate = 0;
     let timeoutTimer: ReturnType<typeof setTimeout>;
     let settled = false;
+    let writeStream: fs.WriteStream | null = null;
+    let readStream: NodeJS.ReadableStream | null = null;
+
+    function cleanup() {
+      try { if (readStream) (readStream as any).destroy?.(); } catch {}
+      if (writeStream) {
+        const ws = writeStream;
+        ws.on("close", () => {
+          try {
+            if (fs.existsSync(destPath)) {
+              const stat = fs.statSync(destPath);
+              if (stat.size === 0 || bytesReceived === 0) {
+                fs.unlinkSync(destPath);
+                cleanEmptyParents(path.dirname(destPath));
+              }
+            }
+          } catch {}
+        });
+        try { ws.destroy(); } catch {}
+      }
+    }
 
     function settle(err?: Error) {
       if (settled) return;
@@ -58,15 +79,27 @@ export async function streamDownload(
       clearTimeout(timeoutTimer);
       activeProgress.delete(downloadId);
       activeStreams.delete(downloadId);
-      if (err) reject(err);
-      else resolve();
+      if (err) {
+        cleanup();
+        reject(err);
+      } else {
+        resolve();
+      }
     }
+
+    const initialTimeout = 60000;
+    const dataTimeout = 60000;
+    let hasReceivedData = false;
 
     function resetTimeout() {
       clearTimeout(timeoutTimer);
+      const timeout = hasReceivedData ? dataTimeout : initialTimeout;
       timeoutTimer = setTimeout(() => {
-        settle(new Error("Download timed out — no data received for 30 seconds"));
-      }, 30000);
+        const msg = hasReceivedData
+          ? "Download stalled — no data for 60s"
+          : "User not responding — try enabling sharing in Settings";
+        settle(new Error(msg));
+      }, timeout);
     }
 
     resetTimeout();
@@ -81,7 +114,7 @@ export async function streamDownload(
     };
     activeProgress.set(downloadId, progress);
 
-    const writeStream = fs.createWriteStream(destPath);
+    writeStream = fs.createWriteStream(destPath);
 
     writeStream.on("error", (err) => {
       settle(new Error("Write error: " + err.message));
@@ -89,24 +122,25 @@ export async function streamDownload(
 
     client.downloadStream(
       { file: { user: username, file } },
-      (err: Error | null, readStream: NodeJS.ReadableStream) => {
+      (err: Error | null, rs: NodeJS.ReadableStream) => {
         if (err) {
           settle(err);
           return;
         }
 
+        readStream = rs;
+
         activeStreams.set(downloadId, {
           destroy: () => {
-            try { (readStream as any).destroy?.(); } catch {}
-            try { writeStream.close(); } catch {}
-            try { fs.unlinkSync(destPath); } catch {}
+            cleanup();
           },
         });
 
-        readStream.on("data", (chunk: Buffer) => {
+        rs.on("data", (chunk: Buffer) => {
+          hasReceivedData = true;
           resetTimeout();
           bytesReceived += chunk.length;
-          writeStream.write(chunk);
+          writeStream!.write(chunk);
 
           const now = Date.now();
           if (now - lastProgressUpdate > 200) {
@@ -122,8 +156,8 @@ export async function streamDownload(
           }
         });
 
-        readStream.on("end", () => {
-          writeStream.end(() => {
+        rs.on("end", () => {
+          writeStream!.end(() => {
             progress.bytesReceived = bytesReceived;
             progress.percent = 100;
             activeProgress.set(downloadId, { ...progress });
@@ -132,12 +166,19 @@ export async function streamDownload(
           });
         });
 
-        readStream.on("error", (err: Error) => {
-          try { writeStream.close(); } catch {}
-          try { fs.unlinkSync(destPath); } catch {}
-          settle(err);
+        rs.on("error", (streamErr: Error) => {
+          settle(streamErr);
         });
       }
     );
   });
+}
+
+function cleanEmptyParents(dir: string) {
+  try {
+    const entries = fs.readdirSync(dir);
+    if (entries.length > 0) return;
+    fs.rmdirSync(dir);
+    cleanEmptyParents(path.dirname(dir));
+  } catch {}
 }

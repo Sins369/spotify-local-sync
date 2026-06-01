@@ -7,13 +7,14 @@ export async function GET() {
 
     const history = db
       .prepare(
-        `SELECT * FROM backup_state
+        `SELECT id, files_synced, files_new, files_failed, status, duration_ms, created_at
+         FROM backup_history
          ORDER BY created_at DESC
          LIMIT 100`
       )
       .all();
 
-    return NextResponse.json(history);
+    return NextResponse.json({ history });
   } catch (error) {
     return NextResponse.json(
       {
@@ -21,7 +22,7 @@ export async function GET() {
           ? error.message
           : "Failed to get backup history",
       },
-      { status: 500 }
+      { status: 500 },
     );
   }
 }

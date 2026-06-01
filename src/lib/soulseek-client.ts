@@ -5,10 +5,14 @@ const globalForSlsk = globalThis as unknown as { __slskClient: any };
 export function getClient() { return globalForSlsk.__slskClient ?? null; }
 function setClient(c: any) { globalForSlsk.__slskClient = c; }
 
-export async function connectSoulseek(username: string, password: string): Promise<void> {
+export async function connectSoulseek(username: string, password: string, sharedFolders?: string[]): Promise<void> {
   const slsk = await import("slsk-client");
   return new Promise((resolve, reject) => {
-    slsk.default.connect({ user: username, pass: password }, (err: Error | null, client: any) => {
+    slsk.default.connect({
+      user: username,
+      pass: password,
+      sharedFolders: sharedFolders ?? [],
+    }, (err: Error | null, client: any) => {
       if (err) return reject(err);
       setClient(client);
       resolve();
@@ -47,6 +51,9 @@ export async function searchSoulseek(query: string): Promise<SoulseekResult[]> {
         });
       }
       results.sort((a, b) => {
+        const aFree = a.queueLength === 0 ? 0 : 1;
+        const bFree = b.queueLength === 0 ? 0 : 1;
+        if (aFree !== bFree) return aFree - bFree;
         const formatOrder: Record<string, number> = { flac: 0, wav: 1, m4a: 2, mp3: 3, ogg: 4, opus: 5 };
         const fa = formatOrder[a.format] ?? 99;
         const fb = formatOrder[b.format] ?? 99;

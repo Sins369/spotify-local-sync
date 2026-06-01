@@ -2,6 +2,7 @@ declare module "slsk-client" {
   interface ConnectOptions {
     user: string;
     pass: string;
+    sharedFolders?: string[];
   }
 
   interface SlskClient {

@@ -1,56 +1,70 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Progress,
-  ProgressLabel,
-  ProgressValue,
-} from "@/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
-import type { BackupState } from "@/types";
+import { Loader2, RefreshCw } from "lucide-react";
 
 interface BackupStatus {
-  source_files: number;
+  total_files: number;
   up_to_date: number;
-  pending: number;
-  pending_files: BackupState[];
+  files_to_copy: number;
+}
+
+interface HistoryEntry {
+  id: number;
+  files_synced: number;
+  files_new: number;
+  files_failed: number;
+  status: string;
+  duration_ms: number | null;
+  created_at: string;
+}
+
+interface Settings {
+  music_source_path?: string;
+  backup_path?: string;
+  [key: string]: string | undefined;
 }
 
 export default function BackupPage() {
   const [status, setStatus] = useState<BackupStatus | null>(null);
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [settings, setSettings] = useState<Settings>({});
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [progress, setProgress] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchStatus();
+    fetchAll();
   }, []);
 
-  async function fetchStatus() {
+  async function fetchAll() {
+    setLoading(true);
     try {
-      const res = await fetch("/api/backup/status");
-      if (res.ok) {
-        const data = await res.json();
-        setStatus(data);
+      const [statusRes, historyRes, settingsRes] = await Promise.all([
+        fetch("/api/backup/status"),
+        fetch("/api/backup/history"),
+        fetch("/api/settings"),
+      ]);
+
+      if (statusRes.ok) {
+        const data = await statusRes.json();
+        setStatus({
+          total_files: data.total_files ?? 0,
+          up_to_date: data.up_to_date ?? 0,
+          files_to_copy: data.files_to_copy ?? 0,
+        });
+      }
+
+      if (historyRes.ok) {
+        const data = await historyRes.json();
+        setHistory(data.history ?? []);
+      }
+
+      if (settingsRes.ok) {
+        const data = await settingsRes.json();
+        setSettings(data);
       }
     } catch {
-      // Fetch failed
+      // fetch failed
     } finally {
       setLoading(false);
     }
@@ -58,110 +72,218 @@ export default function BackupPage() {
 
   async function handleSync() {
     setSyncing(true);
-    setProgress(0);
     try {
-      const res = await fetch("/api/backup/sync", { method: "POST" });
-      if (res.ok) {
-        setProgress(100);
-      }
-      await fetchStatus();
+      await fetch("/api/backup/sync", { method: "POST" });
+      await fetchAll();
     } catch {
-      // Sync failed
+      // sync failed
     } finally {
       setSyncing(false);
-      setProgress(null);
     }
   }
 
-  const statCards = [
-    { label: "Source Files", value: status?.source_files ?? 0 },
-    { label: "Up to Date", value: status?.up_to_date ?? 0 },
-    { label: "Pending", value: status?.pending ?? 0 },
-  ];
-
-  const progressPercent =
-    status && status.source_files > 0
-      ? Math.round((status.up_to_date / status.source_files) * 100)
-      : 0;
+  const sourceFiles = status?.total_files ?? 0;
+  const upToDate = status?.up_to_date ?? 0;
+  const pending = status?.files_to_copy ?? 0;
+  const pct = sourceFiles > 0 ? Math.round((upToDate / sourceFiles) * 100) : 0;
 
   if (loading) {
     return (
-      <div className="space-y-4">
-        <h2 className="text-2xl font-bold">Backup</h2>
-        <p className="text-muted-foreground text-sm">Loading...</p>
+      <div>
+        <h1 className="text-[22px] font-[800] text-[#e0e0e8] mb-4">Backup</h1>
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-5 h-5 text-[#34d399] animate-spin" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Backup</h2>
-        <p className="text-muted-foreground text-sm mt-1">
-          Sync your music library to a backup destination
+    <div>
+      <h1 className="text-[22px] font-[800] text-[#e0e0e8] mb-5">Backup</h1>
+
+      <div className="flex flex-col lg:flex-row gap-5">
+        {/* Left Column */}
+        <div className="flex-[3] min-w-0 space-y-4">
+          {/* Stat Cards */}
+          <div className="grid grid-cols-3 gap-3">
+            <StatCard
+              value={sourceFiles.toLocaleString()}
+              label="SOURCE FILES"
+              valueColor="#e0e0e8"
+            />
+            <StatCard
+              value={upToDate.toLocaleString()}
+              label="UP TO DATE"
+              valueColor="#34d399"
+            />
+            <StatCard
+              value={pending.toLocaleString()}
+              label="PENDING"
+              valueColor="#f59e0b"
+            />
+          </div>
+
+          {/* Progress Bar */}
+          <div>
+            <div className="h-2 rounded bg-[#24243a] overflow-hidden">
+              <div
+                className="h-full rounded bg-[#34d399] transition-all duration-500"
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <p className="text-[12px] text-[#8888a0] mt-1.5">
+              {pct}% backed up
+            </p>
+          </div>
+
+          {/* Sync Now Button */}
+          <button
+            onClick={handleSync}
+            disabled={syncing}
+            className="flex items-center gap-2 px-5 py-2 bg-[#34d399] text-[#12121c] font-semibold rounded-[4px] disabled:opacity-60 transition-colors"
+            style={{ boxShadow: "0 0 16px #34d39933" }}
+          >
+            {syncing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Syncing...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4" />
+                Sync Now
+              </>
+            )}
+          </button>
+
+          {/* Configuration Card */}
+          <div className="bg-[#1c1c28] border border-[rgba(255,255,255,0.06)] rounded-[4px] p-4">
+            <p className="text-[10px] uppercase font-bold tracking-[1.5px] text-[#5a5a6e] mb-3">
+              Configuration
+            </p>
+            <div className="space-y-2.5">
+              <ConfigRow
+                label="Source path"
+                value={settings.music_source_path || "Not configured"}
+              />
+              <ConfigRow
+                label="Destination path"
+                value={settings.backup_path || "Not configured"}
+              />
+              <ConfigRow
+                label="Total size"
+                value={
+                  sourceFiles > 0
+                    ? `${sourceFiles.toLocaleString()} files`
+                    : "-"
+                }
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Right Column */}
+        <div className="flex-[2] min-w-0">
+          <p className="text-[10px] uppercase font-bold tracking-[1.5px] text-[#5a5a6e] mb-3">
+            Backup History
+          </p>
+          <div className="bg-[#1c1c28] border border-[rgba(255,255,255,0.06)] rounded-[4px] max-h-[500px] overflow-y-auto">
+            {history.length === 0 ? (
+              <p className="text-[13px] text-[#5a5a6e] p-4 text-center">
+                No backup history yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-[rgba(255,255,255,0.04)]">
+                {history.map((entry) => (
+                  <HistoryRow key={entry.id} entry={entry} />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatCard({
+  value,
+  label,
+  valueColor,
+}: {
+  value: string;
+  label: string;
+  valueColor: string;
+}) {
+  return (
+    <div className="bg-[#1c1c28] border border-[rgba(255,255,255,0.06)] rounded-[4px] p-4">
+      <p
+        className="text-[28px] font-mono font-[800] leading-tight"
+        style={{ color: valueColor }}
+      >
+        {value}
+      </p>
+      <p className="text-[10px] uppercase font-bold tracking-[1.5px] text-[#5a5a6e] mt-1">
+        {label}
+      </p>
+    </div>
+  );
+}
+
+function ConfigRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4">
+      <span className="text-[12px] text-[#5a5a6e] shrink-0">{label}</span>
+      <span className="text-[13px] font-mono text-[#e0e0e8] truncate text-right">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function HistoryRow({ entry }: { entry: HistoryEntry }) {
+  const isComplete = entry.status === "complete";
+  const dotColor = isComplete ? "bg-[#34d399]" : "bg-[#f59e0b]";
+
+  const dateStr = (() => {
+    try {
+      const d = new Date(entry.created_at);
+      return d.toLocaleDateString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return entry.created_at;
+    }
+  })();
+
+  const durationStr =
+    entry.duration_ms != null
+      ? entry.duration_ms >= 1000
+        ? `${(entry.duration_ms / 1000).toFixed(1)}s`
+        : `${entry.duration_ms}ms`
+      : "";
+
+  return (
+    <div className="flex items-start gap-3 px-4 py-3">
+      <span
+        className={`w-2.5 h-2.5 rounded-full shrink-0 mt-1 ${dotColor}`}
+      />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] text-[#e0e0e8]">{dateStr}</p>
+        <p className="text-[12px] text-[#8888a0] mt-0.5">
+          {entry.files_synced} synced &middot; {entry.files_new} new &middot;{" "}
+          {entry.files_failed} failed
         </p>
       </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {statCards.map((s) => (
-          <Card key={s.label}>
-            <CardHeader>
-              <CardDescription>{s.label}</CardDescription>
-              <CardTitle className="text-3xl tabular-nums">
-                {s.value.toLocaleString()}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
-
-      <div className="space-y-2">
-        <Progress value={syncing && progress !== null ? progress : progressPercent}>
-          <ProgressLabel>Backup progress</ProgressLabel>
-          <ProgressValue>
-            {(formattedValue) => syncing && progress !== null ? `${progress}%` : `${progressPercent}%`}
-          </ProgressValue>
-        </Progress>
-      </div>
-
-      <Button onClick={handleSync} disabled={syncing}>
-        {syncing ? "Syncing..." : "Sync Now"}
-      </Button>
-
-      {status && status.pending_files.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-lg font-semibold">Pending Files</h3>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Source</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {status.pending_files.map((file) => (
-                <TableRow key={file.id}>
-                  <TableCell className="max-w-[400px] truncate" title={file.source_path}>
-                    {file.source_path.split(/[\\/]/).pop()}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={
-                        file.status === "pending"
-                          ? "secondary"
-                          : file.status === "modified"
-                            ? "outline"
-                            : "destructive"
-                      }
-                    >
-                      {file.status}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+      {durationStr && (
+        <span className="text-[12px] font-mono text-[#5a5a6e] shrink-0 mt-0.5">
+          {durationStr}
+        </span>
       )}
     </div>
   );

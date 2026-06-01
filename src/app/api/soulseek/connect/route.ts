@@ -14,7 +14,11 @@ export async function POST() {
       );
     }
 
-    await connectSoulseek(username, password);
+    const shareLibrary = getSetting("soulseek_share_library") === "true";
+    const musicPath = getSetting("music_source_path");
+    const sharedFolders = shareLibrary && musicPath ? [musicPath] : [];
+
+    await connectSoulseek(username, password, sharedFolders);
 
     return NextResponse.json({ success: true, connected: true });
   } catch (error) {

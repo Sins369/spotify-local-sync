@@ -1,24 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
-  Download,
   Check,
-  X,
   Loader2,
-  RefreshCw,
-  Trash2,
   Music,
   RotateCcw,
-  ExternalLink,
   FolderOpen,
 } from "lucide-react";
 
@@ -59,8 +46,8 @@ export default function DownloadsPage() {
   const [downloads, setDownloads] = useState<DownloadRecord[]>([]);
   const [stats, setStats] = useState<QueueStats>({ active: 0, queued: 0, completed: 0, failed: 0, total: 0 });
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "active" | "completed" | "failed">("all");
   const [retryingId, setRetryingId] = useState<number | null>(null);
+  const [downloadPath, setDownloadPath] = useState<string>("");
 
   const fetchDownloads = useCallback(async () => {
     try {
@@ -81,13 +68,29 @@ export default function DownloadsPage() {
     return () => clearInterval(interval);
   }, [fetchDownloads]);
 
-  async function handleClear(action: string) {
-    await fetch("/api/soulseek/queue", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action }),
-    });
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.ok ? r.json() : {})
+      .then((data: Record<string, string>) => setDownloadPath(data.download_path || ""))
+      .catch(() => {});
+  }, []);
+
+  async function handleRetryFailed() {
+    await fetch("/api/soulseek/retry-failed", { method: "POST" });
     fetchDownloads();
+  }
+
+  async function handleClearQueue() {
+    await fetch("/api/soulseek/clear-queue", { method: "POST" });
+    fetchDownloads();
+  }
+
+  async function handleOpenFolder() {
+    await fetch("/api/open-folder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folderPath: downloadPath }),
+    });
   }
 
   async function handleRemove(id: number) {
@@ -114,275 +117,343 @@ export default function DownloadsPage() {
     return (bytes / (1024 * 1024)).toFixed(1) + " MB";
   }
 
-  const filtered = downloads.filter((d) => {
-    if (filter === "all") return true;
-    if (filter === "active") return d.status === "downloading" || d.status === "queued";
-    if (filter === "completed") return d.status === "complete";
-    if (filter === "failed") return d.status === "failed";
+  // Track IDs that completed successfully
+  const completedTrackIds = new Set(
+    downloads.filter((d) => d.status === "complete").map((d) => d.spotify_track_id)
+  );
+
+  // Group downloads by status, hiding failed entries for tracks that eventually completed,
+  // and deduplicating failed entries per track (keep only the most recent attempt)
+  const active = downloads.filter((d) => d.status === "downloading" || d.status === "tagging");
+  const queued = downloads.filter((d) => d.status === "queued");
+  const completed = downloads.filter((d) => d.status === "complete");
+
+  const failedAll = downloads.filter((d) => d.status === "failed" && !completedTrackIds.has(d.spotify_track_id));
+  const seenFailedTracks = new Set<number>();
+  const failed = failedAll.filter((d) => {
+    if (seenFailedTracks.has(d.spotify_track_id)) return false;
+    seenFailedTracks.add(d.spotify_track_id);
     return true;
   });
 
-  function formatTime(dateStr: string | null) {
-    if (!dateStr) return "";
-    const d = new Date(dateStr + "Z");
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-  }
-
-  function formatDate(dateStr: string | null) {
-    if (!dateStr) return "";
-    const d = new Date(dateStr + "Z");
-    const today = new Date();
-    if (d.toDateString() === today.toDateString()) return "Today";
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
-    return d.toLocaleDateString();
-  }
-
   if (loading) {
     return (
-      <div className="space-y-4 max-w-5xl">
-        <h2 className="text-2xl font-bold text-[#F8FAFC]">Downloads</h2>
+      <div className="space-y-4 ">
+        <h2 className="text-[22px] font-[800] text-[#e0e0e8]">Downloads</h2>
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="w-5 h-5 text-[#22C55E] animate-spin" />
+          <Loader2 className="w-5 h-5 text-[#34d399] animate-spin" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="space-y-6 ">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-[#F8FAFC]">Downloads</h2>
-          <p className="text-[#94A3B8] text-sm mt-1">{stats.total} total downloads</p>
+          <h2 className="text-[22px] font-[800] text-[#e0e0e8]">Downloads</h2>
+          <p className="text-[#8888a0] text-[12px] mt-0.5">{stats.total} total</p>
         </div>
         <div className="flex gap-2">
-          {stats.completed > 0 && (
-            <Button variant="outline" size="sm" className="text-xs border-[#334155] gap-1.5"
-              onClick={() => handleClear("clear_completed")}>
-              <Trash2 className="w-3 h-3" /> Clear Completed
-            </Button>
-          )}
           {stats.failed > 0 && (
-            <Button variant="outline" size="sm" className="text-xs border-[#334155] text-red-400 gap-1.5"
-              onClick={() => handleClear("clear_failed")}>
-              <Trash2 className="w-3 h-3" /> Clear Failed
-            </Button>
+            <button
+              onClick={handleRetryFailed}
+              className="px-3 py-1.5 bg-[#24243a] text-[#e0e0e8] text-[12px] rounded-[4px] hover:bg-[#34d399] hover:text-[#12121c] transition-colors"
+            >
+              Retry Failed
+            </button>
           )}
+          {stats.queued > 0 && (
+            <button
+              onClick={handleClearQueue}
+              className="px-3 py-1.5 bg-[#24243a] text-[#e0e0e8] text-[12px] rounded-[4px] hover:bg-[#34d399] hover:text-[#12121c] transition-colors"
+            >
+              Clear Queue
+            </button>
+          )}
+          <button
+            onClick={handleOpenFolder}
+            className="px-3 py-1.5 bg-[#24243a] text-[#e0e0e8] text-[12px] rounded-[4px] hover:bg-[#34d399] hover:text-[#12121c] transition-colors flex items-center gap-1.5"
+          >
+            <FolderOpen className="w-3.5 h-3.5" />
+            Open Folder
+          </button>
         </div>
       </div>
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-5 gap-3">
-        {[
-          { label: "Active", value: stats.active, icon: Loader2, color: "#22C55E", filterKey: "active" as const, iconClass: "animate-spin" },
-          { label: "Queued", value: stats.queued, icon: Download, color: "#F59E0B", filterKey: "active" as const, iconClass: "" },
-          { label: "Completed", value: stats.completed, icon: Check, color: "#22C55E", filterKey: "completed" as const, iconClass: "" },
-          { label: "Failed", value: stats.failed, icon: X, color: "#EF4444", filterKey: "failed" as const, iconClass: "" },
-          { label: "Total", value: stats.total, icon: Download, color: "#94A3B8", filterKey: "all" as const, iconClass: "" },
-        ].map((s) => {
-          const Icon = s.icon;
-          const isActive = filter === s.filterKey;
-          return (
-            <button key={s.label} onClick={() => setFilter(s.filterKey)}
-              className={`text-left rounded-lg border p-3 transition-all ${
-                isActive
-                  ? "bg-[#0F172A] border-[#22C55E]/30"
-                  : "bg-[#0F172A] border-[#334155] hover:border-[#475569]"
-              }`}>
-              <div className="flex items-center gap-2 mb-1">
-                <Icon className={`w-3.5 h-3.5 ${s.iconClass}`} style={{ color: s.color }} />
-                <span className="text-[11px] text-[#94A3B8]">{s.label}</span>
-              </div>
-              <p className="text-xl font-bold text-[#F8FAFC]">{s.value}</p>
-            </button>
-          );
-        })}
-      </div>
+      {/* Two-column layout: queue on left, completed on right */}
+      <div className="flex flex-col lg:flex-row gap-6">
+        {/* Left column: Active / Queued / Failed */}
+        <div className="flex-[3] min-w-0 space-y-6">
+          <Section label="Active" count={active.length}>
+            {active.map((dl) => (
+              <DownloadCard
+                key={dl.id}
+                dl={dl}
+                onCancel={handleCancel}
+                onRemove={handleRemove}
+                onRetryToggle={() => {}}
+                retryingId={retryingId}
+                formatBytes={formatBytes}
+              />
+            ))}
+          </Section>
 
-      {/* Download list */}
-      {filtered.length === 0 ? (
-        <Card className="bg-[#0F172A] border-[#334155]">
-          <CardContent className="flex flex-col items-center justify-center py-16">
-            <Download className="w-10 h-10 text-[#1E293B] mb-3" />
-            <p className="text-[#64748B]">
-              {stats.total === 0
-                ? "No downloads yet"
-                : `No ${filter === "all" ? "" : filter} downloads`}
-            </p>
-            {stats.total === 0 && (
-              <p className="text-xs text-[#475569] mt-1">Go to Sync to search and download tracks</p>
-            )}
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((dl) => (
-            <Card key={dl.id} className={`bg-[#0F172A] border-[#334155] transition-all ${
-              dl.status === "downloading" ? "border-[#22C55E]/30" : ""
-            }`}>
-              <CardContent className="flex items-center gap-4 py-3">
-                {/* Album art */}
-                {dl.album_art_url ? (
-                  <img src={dl.album_art_url} alt="" className="w-12 h-12 rounded object-cover shrink-0" />
-                ) : (
-                  <div className="w-12 h-12 rounded bg-[#1E293B] flex items-center justify-center shrink-0">
-                    <Music className="w-5 h-5 text-[#475569]" />
+          <Section label="Queued" count={queued.length}>
+            {queued.map((dl) => (
+              <DownloadCard
+                key={dl.id}
+                dl={dl}
+                onCancel={handleCancel}
+                onRemove={handleRemove}
+                onRetryToggle={() => {}}
+                retryingId={retryingId}
+                formatBytes={formatBytes}
+              />
+            ))}
+          </Section>
+
+          <Section label="Failed" count={failed.length}>
+            {failed.map((dl) => (
+              <div key={dl.id}>
+                <DownloadCard
+                  dl={dl}
+                  onCancel={handleCancel}
+                  onRemove={handleRemove}
+                  onRetryToggle={() => setRetryingId(retryingId === dl.id ? null : dl.id)}
+                  retryingId={retryingId}
+                  formatBytes={formatBytes}
+                />
+                {retryingId === dl.id && (
+                  <div className="ml-[52px] mt-1 mb-2 p-3 bg-[#141420] border border-[rgba(255,255,255,0.06)] rounded-[4px]">
+                    <RetryPanel
+                      trackId={dl.spotify_track_id}
+                      title={dl.title ?? ""}
+                      artist={dl.artist ?? ""}
+                      onQueued={() => { setRetryingId(null); fetchDownloads(); }}
+                    />
                   </div>
                 )}
+              </div>
+            ))}
+          </Section>
+        </div>
 
-                {/* Track info */}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-[#F8FAFC] truncate">
-                    {dl.title ?? dl.filename ?? "Unknown"}
-                  </p>
-                  <p className="text-xs text-[#94A3B8] truncate">
-                    {dl.artist ?? "Unknown"}{dl.album ? ` — ${dl.album}` : ""}
-                  </p>
-                  <div className="flex items-center gap-3 mt-1">
-                    {dl.source_user && (
-                      <span className="text-[10px] text-[#475569]">from {dl.source_user}</span>
-                    )}
-                    {dl.filename && (
-                      <span className="text-[10px] text-[#475569] font-mono truncate max-w-48">{dl.filename}</span>
-                    )}
-                  </div>
-                  {dl.error && (
-                    <p className="text-[11px] text-red-400 mt-1">{dl.error}</p>
-                  )}
-                  {dl.download_path && dl.status === "complete" && (
-                    <p className="text-[10px] font-mono text-[#22C55E]/60 mt-1 truncate" title={dl.download_path}>
-                      {dl.download_path.split(/[\\/]/).slice(-3).join("/")}
-                    </p>
-                  )}
+        {/* Right column: Completed */}
+        <div className="flex-[2] min-w-0">
+          <Section label="Completed" count={completed.length}>
+            {completed.map((dl) => (
+              <DownloadCard
+                key={dl.id}
+                dl={dl}
+                onCancel={handleCancel}
+                onRemove={handleRemove}
+                onRetryToggle={() => {}}
+                retryingId={retryingId}
+                formatBytes={formatBytes}
+              />
+            ))}
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-                  {/* Progress bar for active downloads */}
-                  {(dl.status === "downloading" || dl.status === "tagging") && (
-                    <div className="mt-2 space-y-1">
-                      <div className="w-full h-1.5 bg-[#1E293B] rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-[#22C55E] rounded-full transition-all duration-500"
-                          style={{ width: `${dl.percent ?? 0}%` }}
-                        />
-                      </div>
-                      <div className="flex justify-between text-[10px] text-[#64748B]">
-                        <span>
-                          {dl.status === "tagging" ? "Writing tags..." :
-                            `${formatBytes(dl.bytes_received ?? 0)} / ${formatBytes(dl.file_size ?? 0)} — ${dl.percent ?? 0}%`}
-                        </span>
-                        {dl.speed && dl.status === "downloading" && <span>{formatBytes(dl.speed)}/s</span>}
-                      </div>
-                    </div>
-                  )}
-                </div>
+function Section({ label, count, children }: { label: string; count: number; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="uppercase text-[10px] font-[700] tracking-[1.5px] text-[#5a5a6e]">
+          {label}
+        </span>
+        <span className="text-[10px] font-[700] text-[#5a5a6e] bg-[#24243a] px-1.5 py-0.5 rounded-[3px]">
+          {count}
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {children}
+      </div>
+    </div>
+  );
+}
 
-                {/* Status + actions */}
-                <div className="flex flex-col items-end gap-2 shrink-0">
-                  {dl.status === "queued" && (
-                    <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">
-                      Queued
-                    </Badge>
-                  )}
-                  {dl.status === "queued" && dl.queue_position && (
-                    <Badge className="bg-[#1E293B] text-[#94A3B8] text-[10px]">
-                      #{dl.queue_position} in queue
-                    </Badge>
-                  )}
-                  {dl.status === "downloading" && (
-                    <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">
-                      <Loader2 className="w-3 h-3 animate-spin mr-1" />Downloading
-                    </Badge>
-                  )}
-                  {dl.status === "tagging" && (
-                    <Badge className="bg-[#A855F7]/20 text-[#A855F7] text-[10px]">
-                      <Loader2 className="w-3 h-3 animate-spin mr-1" />Tagging
-                    </Badge>
-                  )}
-                  {dl.status === "complete" && (
-                    <Badge className="bg-[#22C55E]/20 text-[#22C55E] text-[10px]">
-                      <Check className="w-3 h-3 mr-1" />Complete
-                    </Badge>
-                  )}
-                  {dl.status === "failed" && (
-                    <Badge className="bg-red-500/20 text-red-400 text-[10px]">
-                      <X className="w-3 h-3 mr-1" />Failed
-                    </Badge>
-                  )}
+function DownloadCard({
+  dl,
+  onCancel,
+  onRemove,
+  onRetryToggle,
+  retryingId,
+  formatBytes,
+}: {
+  dl: DownloadRecord;
+  onCancel: (id: number) => void;
+  onRemove: (id: number) => void;
+  onRetryToggle: () => void;
+  retryingId: number | null;
+  formatBytes: (bytes: number) => string;
+}) {
+  const isFlac = dl.format?.toLowerCase() === "flac";
+  const isMp3 = dl.format?.toLowerCase() === "mp3";
 
-                  <div className="flex items-center gap-1">
-                    {dl.status === "complete" && dl.download_path && (
-                      <button
-                        onClick={() => fetch("/api/open-folder", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ filePath: dl.download_path }),
-                        })}
-                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-[#F8FAFC] transition-colors"
-                        title="Open folder"
-                      >
-                        <FolderOpen className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {dl.status === "complete" && dl.spotify_id && (
-                      <a
-                        href={`https://open.spotify.com/track/${dl.spotify_id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-[#F8FAFC] transition-colors"
-                        title="Open on Spotify"
-                      >
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
-                    )}
-                    {dl.status === "failed" && (
-                      <button
-                        onClick={() => setRetryingId(retryingId === dl.id ? null : dl.id)}
-                        className={`p-1 rounded hover:bg-[#1E293B] transition-colors ${retryingId === dl.id ? "text-[#22C55E]" : "text-[#64748B] hover:text-[#22C55E]"}`}
-                        title="Retry with different source"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {(dl.status === "queued" || dl.status === "downloading") && (
-                      <button
-                        onClick={() => handleCancel(dl.id)}
-                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-red-400 transition-colors"
-                        title="Cancel"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {(dl.status === "complete" || dl.status === "failed") && (
-                      <button
-                        onClick={() => handleRemove(dl.id)}
-                        className="p-1 rounded hover:bg-[#1E293B] text-[#64748B] hover:text-red-400 transition-colors"
-                        title="Remove"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-
-                  <span className="text-[10px] text-[#475569]">
-                    {formatDate(dl.created_at)} {formatTime(dl.created_at)}
-                  </span>
-                </div>
-              </CardContent>
-              {retryingId === dl.id && (
-                <div className="border-t border-[#334155] p-4">
-                  <RetryPanel
-                    trackId={dl.spotify_track_id}
-                    title={dl.title ?? ""}
-                    artist={dl.artist ?? ""}
-                    onQueued={() => { setRetryingId(null); fetchDownloads(); }}
-                  />
-                </div>
-              )}
-            </Card>
-          ))}
+  return (
+    <div className="bg-[#1c1c28] border border-[rgba(255,255,255,0.06)] rounded-[4px] p-3 flex items-start gap-3">
+      {/* Album art */}
+      {dl.album_art_url ? (
+        <img src={dl.album_art_url} alt="" className="w-10 h-10 rounded-[3px] object-cover shrink-0" />
+      ) : (
+        <div className="w-10 h-10 rounded-[3px] bg-[#24243a] flex items-center justify-center shrink-0">
+          <Music className="w-4 h-4 text-[#5a5a6e]" />
         </div>
       )}
+
+      {/* Track info */}
+      <div className="min-w-0 flex-1">
+        <p className="text-[14px] text-[#e0e0e8] truncate leading-tight">
+          {dl.title ?? dl.filename ?? "Unknown"}
+        </p>
+        <p className="text-[12px] text-[#8888a0] truncate mt-0.5">
+          {dl.artist ?? "Unknown"}{dl.album ? ` — ${dl.album}` : ""}
+        </p>
+        <div className="flex items-center gap-2 mt-1">
+          {dl.source_user && (
+            <span className="text-[10px] text-[#5a5a6e] font-mono">{dl.source_user}</span>
+          )}
+          {dl.filename && (
+            <span className="text-[10px] text-[#5a5a6e] font-mono truncate max-w-[200px]">
+              {dl.filename.split(/[\\/]/).pop()}
+            </span>
+          )}
+        </div>
+
+        {/* Error message for failed */}
+        {dl.error && (
+          <p className="text-[11px] text-[#e05566] mt-1">{dl.error}</p>
+        )}
+
+        {/* File path for completed */}
+        {dl.download_path && dl.status === "complete" && (
+          <p className="text-[10px] font-mono text-[#5a5a6e] mt-1 truncate" title={dl.download_path}>
+            {dl.download_path}
+          </p>
+        )}
+
+        {/* Progress bar for active downloads */}
+        {(dl.status === "downloading" || dl.status === "tagging") && (
+          <div className="mt-2">
+            <div className="w-full h-[4px] bg-[#24243a] rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#34d399] rounded-full transition-all duration-500"
+                style={{ width: `${dl.percent ?? 0}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[10px] text-[#5a5a6e] mt-1">
+              <span>
+                {dl.status === "tagging"
+                  ? "Writing tags..."
+                  : `${formatBytes(dl.bytes_received ?? 0)} / ${formatBytes(dl.file_size ?? 0)} — ${dl.percent ?? 0}%`}
+              </span>
+              {dl.speed != null && dl.status === "downloading" && (
+                <span>{formatBytes(dl.speed)}/s</span>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Queue position for queued */}
+        {dl.status === "queued" && dl.queue_position != null && (
+          <p className="text-[10px] text-[#8888a0] mt-1">#{dl.queue_position} in queue</p>
+        )}
+      </div>
+
+      {/* Right side: badges + actions */}
+      <div className="flex flex-col items-end gap-1.5 shrink-0">
+        <div className="flex items-center gap-1.5">
+          {/* Format badge */}
+          {isFlac && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#34d399]/20 text-[#34d399] font-medium">
+              FLAC
+            </span>
+          )}
+          {isMp3 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#24243a] text-[#8888a0] font-medium">
+              MP3
+            </span>
+          )}
+          {dl.format && !isFlac && !isMp3 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#24243a] text-[#8888a0] font-medium">
+              {dl.format.toUpperCase()}
+            </span>
+          )}
+          {dl.bitrate != null && (
+            <span className="text-[10px] text-[#5a5a6e]">
+              {dl.bitrate > 1000 ? `${Math.round(dl.bitrate / 1000)}k` : `${dl.bitrate}k`}
+            </span>
+          )}
+
+          {/* Status badge */}
+          {dl.status === "downloading" && (
+            <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#34d399]/20 text-[#34d399]">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Downloading
+            </span>
+          )}
+          {dl.status === "tagging" && (
+            <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#34d399]/20 text-[#34d399]">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Tagging
+            </span>
+          )}
+          {dl.status === "queued" && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#24243a] text-[#8888a0]">
+              Queued
+            </span>
+          )}
+          {dl.status === "failed" && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#e05566]/20 text-[#e05566]">
+              Failed
+            </span>
+          )}
+          {dl.status === "complete" && (
+            <span className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#34d399]/20 text-[#34d399]">
+              <Check className="w-3 h-3" />
+              Complete
+            </span>
+          )}
+        </div>
+
+        {/* Action links */}
+        <div className="flex items-center gap-2 mt-0.5">
+          {(dl.status === "queued" || dl.status === "downloading") && (
+            <button
+              onClick={() => onCancel(dl.id)}
+              className="text-[10px] text-[#5a5a6e] hover:text-[#e05566] transition-colors"
+            >
+              Cancel
+            </button>
+          )}
+          {dl.status === "failed" && (
+            <button
+              onClick={onRetryToggle}
+              className={`text-[10px] transition-colors flex items-center gap-0.5 ${
+                retryingId === dl.id ? "text-[#34d399]" : "text-[#5a5a6e] hover:text-[#34d399]"
+              }`}
+            >
+              <RotateCcw className="w-3 h-3" />
+              Retry
+            </button>
+          )}
+          {(dl.status === "complete" || dl.status === "failed") && (
+            <button
+              onClick={() => onRemove(dl.id)}
+              className="text-[10px] text-[#5a5a6e] hover:text-[#e05566] transition-colors"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -452,37 +523,69 @@ function RetryPanel({ trackId, title, artist, onQueued }: {
 
   return (
     <div className="space-y-2">
-      <p className="text-xs font-medium text-[#94A3B8]">
+      <p className="text-[11px] font-medium text-[#8888a0]">
         {searching ? "Searching Soulseek..." : `${results.length} results — pick a new source`}
       </p>
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {error && <p className="text-[11px] text-[#e05566]">{error}</p>}
       {searching ? (
         <div className="flex items-center gap-2 py-3 justify-center">
-          <Loader2 className="w-4 h-4 text-[#22C55E] animate-spin" />
+          <Loader2 className="w-4 h-4 text-[#34d399] animate-spin" />
         </div>
       ) : (
         <div className="space-y-1 max-h-48 overflow-y-auto">
           {results.map((r, i) => {
             const isFailed = failedUsers.has(r.username);
             const filename = r.file.split(/[\\/]/).pop() ?? r.file;
+            const isFlac = r.format?.toLowerCase() === "flac";
             return (
-              <div key={i} className={`flex items-center gap-2 p-2 rounded border transition-colors ${
-                isFailed ? "border-red-500/20 bg-red-500/5 opacity-50" : "border-[#1E293B] bg-[#020617] hover:border-[#334155]"
-              }`}>
+              <div
+                key={i}
+                className={`flex items-center gap-2 p-2 rounded-[4px] border transition-colors ${
+                  isFailed
+                    ? "border-[#e05566]/20 bg-[#e05566]/5 opacity-50"
+                    : "border-[rgba(255,255,255,0.06)] bg-[#1c1c28] hover:bg-[#24243a]"
+                }`}
+              >
                 <div className="min-w-0 flex-1">
-                  <p className="text-[11px] text-[#94A3B8] truncate">{filename}</p>
-                  <div className="flex items-center gap-2 text-[10px] text-[#64748B]">
-                    <Badge variant="secondary" className="text-[9px] px-1 py-0">{r.format.toUpperCase()}</Badge>
-                    {r.bitrate && <span>{r.bitrate > 1000 ? `${Math.round(r.bitrate / 1000)} kbps` : `${r.bitrate} kbps`}</span>}
-                    <span>{formatSize(r.size)}</span>
-                    <span className={isFailed ? "text-red-400" : "text-[#475569]"}>{r.username}</span>
-                    {isFailed && <Badge className="bg-red-500/20 text-red-400 text-[9px] px-1 py-0">Failed</Badge>}
+                  <p className="text-[11px] text-[#e0e0e8] truncate font-mono">{filename}</p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {/* Format badge */}
+                    {isFlac ? (
+                      <span className="text-[9px] px-1 py-0 rounded-[2px] bg-[#34d399]/20 text-[#34d399] font-medium">
+                        FLAC
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-1 py-0 rounded-[2px] bg-[#24243a] text-[#8888a0] font-medium">
+                        {r.format.toUpperCase()}
+                      </span>
+                    )}
+                    {r.bitrate != null && (
+                      <span className="text-[10px] text-[#5a5a6e]">
+                        {r.bitrate > 1000 ? `${Math.round(r.bitrate / 1000)} kbps` : `${r.bitrate} kbps`}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-[#5a5a6e]">{formatSize(r.size)}</span>
+                    <span className={`text-[10px] ${isFailed ? "text-[#e05566]" : "text-[#5a5a6e]"}`}>
+                      {r.username}
+                    </span>
+                    {isFailed && (
+                      <span className="text-[9px] px-1 py-0 rounded-[2px] bg-[#e05566]/20 text-[#e05566]">
+                        FAILED
+                      </span>
+                    )}
                   </div>
                 </div>
-                <Button size="sm" className="text-[10px] h-7 px-3 shrink-0"
-                  onClick={() => handleDownload(r)} disabled={downloading !== null || isFailed}>
-                  {downloading === r.file ? <Loader2 className="w-3 h-3 animate-spin" /> : "Download"}
-                </Button>
+                <button
+                  onClick={() => handleDownload(r)}
+                  disabled={downloading !== null}
+                  className="text-[10px] px-2.5 py-1 rounded-[4px] bg-[#24243a] text-[#e0e0e8] hover:bg-[#34d399] hover:text-[#12121c] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                >
+                  {downloading === r.file ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    "Download"
+                  )}
+                </button>
               </div>
             );
           })}

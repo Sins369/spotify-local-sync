@@ -1,9 +1,11 @@
 import { getDb } from "./db";
 import { getSetting } from "./settings";
-import { connectSoulseek, isConnected } from "./soulseek-client";
+import { connectSoulseek, isConnected, searchSoulseek } from "./soulseek-client";
 import { streamDownload } from "./soulseek-download";
 import { writeTags } from "./metadata-writer";
 import path from "path";
+
+const MAX_AUTO_RETRIES = 3;
 
 const globalForWorker = globalThis as unknown as { __downloadWorkerRunning: boolean };
 
@@ -52,9 +54,12 @@ async function processQueue(): Promise<void> {
     const username = getSetting("soulseek_username");
     const password = getSetting("soulseek_password");
     if (!username || !password) return;
+    const shareLibrary = getSetting("soulseek_share_library") === "true";
+    const musicPath = getSetting("music_source_path");
+    const sharedFolders = shareLibrary && musicPath ? [musicPath] : [];
     try {
       await Promise.race([
-        connectSoulseek(username, password),
+        connectSoulseek(username, password, sharedFolders),
         sleep(10000).then(() => { throw new Error("Connection timeout"); }),
       ]);
     } catch {
@@ -130,13 +135,61 @@ async function processDownload(download: {
   } catch (err) {
     const error = err instanceof Error ? err.message : "Download failed";
     db.prepare(
-      "UPDATE downloads SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?"
-    ).run(error, download.id);
-    // Record failed user so search results can flag them
-    db.prepare(
       "INSERT OR IGNORE INTO failed_users (spotify_track_id, username) VALUES (?, ?)"
     ).run(download.spotify_track_id, download.source_user);
+
+    const isUserBlock = error.includes("not responding") || error.includes("timed out");
+    if (isUserBlock) {
+      const altSource = await findAlternateSource(download.spotify_track_id, download.source_file);
+      if (altSource) {
+        db.prepare(
+          "UPDATE downloads SET source_user = ?, source_file = ?, filename = ?, file_size = ?, format = ?, bitrate = ?, status = 'queued', error = NULL, started_at = NULL WHERE id = ?"
+        ).run(
+          altSource.username, altSource.file, path.basename(altSource.file),
+          altSource.size, altSource.format, altSource.bitrate, download.id
+        );
+        return;
+      }
+    }
+
+    db.prepare(
+      "UPDATE downloads SET status = 'failed', error = ?, completed_at = datetime('now') WHERE id = ?"
+    ).run(error, download.id);
   }
+}
+
+async function findAlternateSource(
+  spotifyTrackId: number,
+  currentFile: string,
+): Promise<{ username: string; file: string; size: number; format: string; bitrate: number | null } | null> {
+  const db = getDb();
+
+  const failedUserRows = db.prepare(
+    "SELECT username FROM failed_users WHERE spotify_track_id = ?"
+  ).all(spotifyTrackId) as Array<{ username: string }>;
+  const failedUsernames = new Set(failedUserRows.map((r) => r.username));
+
+  if (failedUsernames.size >= MAX_AUTO_RETRIES) return null;
+
+  const track = db.prepare("SELECT title, artist FROM spotify_tracks WHERE id = ?")
+    .get(spotifyTrackId) as { title: string; artist: string } | undefined;
+  if (!track) return null;
+
+  try {
+    const results = await searchSoulseek(`${track.artist} ${track.title}`);
+    const candidate = results.find((r) => !failedUsernames.has(r.username));
+    if (candidate) {
+      return {
+        username: candidate.username,
+        file: candidate.file,
+        size: candidate.size,
+        format: candidate.format,
+        bitrate: candidate.bitrate,
+      };
+    }
+  } catch {}
+
+  return null;
 }
 
 function sleep(ms: number): Promise<void> {

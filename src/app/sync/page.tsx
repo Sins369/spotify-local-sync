@@ -208,6 +208,7 @@ export default function SyncPage() {
         else if (data.type === "queued") {
           setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "queued"));
           setDownloadedIds(prev => new Set(prev).add(data.trackId));
+          setMissingLocally(prev => prev.filter(t => t.id !== data.trackId));
         } else if (data.type === "no_results") setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "no_results"));
         else if (data.type === "progress") setBulkProgress(data);
         else if (data.type === "done") {

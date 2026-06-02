@@ -168,9 +168,9 @@ export async function runBulkDownload(
       }
       if (state.cancelled) break;
 
-      // Skip if already has an active/completed download
+      // Skip if already has any download (including failed)
       const existingDownload = db.prepare(
-        "SELECT id FROM downloads WHERE spotify_track_id = ? AND status IN ('queued', 'downloading', 'tagging', 'complete')"
+        "SELECT id FROM downloads WHERE spotify_track_id = ?"
       ).get(trackId) as { id: number } | undefined;
       if (existingDownload) {
         state.searched++;
@@ -289,24 +289,20 @@ async function searchWithVariations(
   firstArtist: string,
   qualityPref: QualityPref,
 ): Promise<SoulseekResult | null> {
-  // Two query variations as specified
-  const queries = [
-    `${firstArtist} ${title}`,
-    `${title} ${firstArtist}`,
-  ];
+  // Try first query — skip second if good results found
+  try {
+    const results = await searchSoulseek(`${firstArtist} ${title}`);
+    const pick = pickSource(results, qualityPref);
+    if (pick) return pick;
+  } catch {}
 
-  const allResults: SoulseekResult[] = [];
+  // Fallback: reversed query
+  try {
+    const results = await searchSoulseek(`${title} ${firstArtist}`);
+    return pickSource(results, qualityPref);
+  } catch {}
 
-  for (const query of queries) {
-    try {
-      const results = await searchSoulseek(query);
-      allResults.push(...results);
-    } catch {
-      // Search failure — continue with next variation
-    }
-  }
-
-  return pickSource(allResults, qualityPref);
+  return null;
 }
 
 function emitProgress(state: BulkState): void {

@@ -88,8 +88,16 @@ export async function POST() {
       local_id: number; spotify_id: number; method: string; confidence: number; confirmed: number;
     }> = [];
 
+    const yieldEvt = () => new Promise<void>((r) => setTimeout(r, 0));
+
     for (const localTrack of unmatchedLocal) {
       processed++;
+
+      // Yield every 50 tracks so SSE progress events can stream
+      if (processed % 50 === 0) {
+        eventBus.emit("match:progress", { total, processed, matched, noMatch });
+        await yieldEvt();
+      }
 
       // Stage 1: ISRC exact match (instant, no API call)
       if (localTrack.isrc) {

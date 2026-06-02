@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
              WHERE m.id IS NULL
              AND st.id NOT IN (
                SELECT spotify_track_id FROM downloads
-               WHERE status IN ('complete', 'downloading', 'tagging', 'queued')
+               WHERE status IN ('complete', 'downloading', 'tagging', 'queued', 'failed')
              )
              ORDER BY st.title`
           )

@@ -78,6 +78,7 @@ export default function SyncPage() {
   const [bulkProgress, setBulkProgress] = useState<{ searched: number; queued: number; noResults: number; total: number } | null>(null);
   const [bulkTrackStatus, setBulkTrackStatus] = useState<Map<number, "searching" | "queued" | "no_results">>(new Map());
   const [batchSize, setBatchSize] = useState<number | "all">(25);
+  const [failedTrackIds, setFailedTrackIds] = useState<Set<number>>(new Set());
 
   const fetchMissingLocally = useCallback(async () => {
     setLoadingLocal(true);
@@ -118,6 +119,11 @@ export default function SyncPage() {
           status: d.status,
         }));
         setQueueItems(recent);
+        const failed = new Set(
+          downloads.filter((d: { status: string; spotify_track_id: number }) => d.status === "failed")
+            .map((d: { spotify_track_id: number }) => d.spotify_track_id)
+        );
+        setFailedTrackIds(failed as Set<number>);
       }
     } catch {}
   }, []);
@@ -426,6 +432,9 @@ export default function SyncPage() {
                         )}
                         {(isQueued || bulkTrackStatus.get(track.id) === "queued") && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#34d399]/20 text-[#34d399] font-semibold uppercase shrink-0">Queued</span>
+                        )}
+                        {failedTrackIds.has(track.id) && !isQueued && bulkTrackStatus.get(track.id) !== "queued" && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#e05566]/20 text-[#e05566] font-semibold uppercase shrink-0">Failed</span>
                         )}
                       </button>
                     );

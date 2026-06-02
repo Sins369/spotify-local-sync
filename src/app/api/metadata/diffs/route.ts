@@ -73,7 +73,15 @@ export async function GET() {
       allDiffs.push(...diffs);
     }
 
-    return NextResponse.json(allDiffs);
+    const seen = new Set<string>();
+    const uniqueDiffs = allDiffs.filter((d) => {
+      const key = `${d.local_track_id}:${d.field}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    return NextResponse.json(uniqueDiffs);
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to get diffs" },

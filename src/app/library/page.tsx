@@ -431,7 +431,7 @@ export default function LibraryPage() {
               ) : (
                 tracks.map((track) => (
                   <tr
-                    key={`${track.id}-${track.file_path ?? track.spotify_added_at ?? ""}`}
+                    key={`${track.id}-${track.file_path ?? "s"}-${track.spotify_added_at ?? "l"}`}
                     className="border-t border-[rgba(255,255,255,0.03)] hover:bg-[#24243a] transition-colors duration-100"
                   >
                     {ALL_COLUMNS.filter((col) => visibleColumns.has(col.key)).map((col) => (

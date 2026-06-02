@@ -129,6 +129,29 @@ export default function SyncPage() {
     fetchQueue();
     fetch("/api/soulseek/connect", { method: "POST" }).catch(() => {});
 
+    // Check if bulk download is already running (e.g. after navigation)
+    fetch("/api/soulseek/bulk-progress").then(res => {
+      if (!res.ok || !res.body) return;
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      reader.read().then(({ value, done }) => {
+        if (done || !value) return;
+        reader.cancel();
+        try {
+          const text = decoder.decode(value);
+          const match = text.match(/data: (.+)/);
+          if (match) {
+            const data = JSON.parse(match[1]);
+            if (data.type === "progress" && data.total > 0) {
+              setBulkRunning(true);
+              setBulkProgress(data);
+              connectBulkSSE();
+            }
+          }
+        } catch {}
+      });
+    }).catch(() => {});
+
     const interval = setInterval(fetchQueue, 5000);
     return () => clearInterval(interval);
   }, [fetchMissingLocally, fetchMissingOnSpotify, checkMatches, fetchQueue]);
@@ -176,16 +199,7 @@ export default function SyncPage() {
     setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
 
-  async function startBulkDownload(trackIds?: number[]) {
-    setBulkRunning(true);
-    setBulkProgress(null);
-    setBulkTrackStatus(new Map());
-    const body: Record<string, unknown> = { qualityPref, batchSize };
-    if (trackIds && trackIds.length > 0) body.trackIds = trackIds;
-    const res = await fetch("/api/soulseek/bulk-download", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    });
-    if (!res.ok) { setBulkRunning(false); return; }
+  function connectBulkSSE() {
     const es = new EventSource("/api/soulseek/bulk-progress");
     es.onmessage = (e) => {
       try {
@@ -202,7 +216,20 @@ export default function SyncPage() {
         }
       } catch {}
     };
-    es.onerror = () => { es.close(); setBulkRunning(false); };
+    es.onerror = () => { es.close(); };
+  }
+
+  async function startBulkDownload(trackIds?: number[]) {
+    setBulkRunning(true);
+    setBulkProgress(null);
+    setBulkTrackStatus(new Map());
+    const body: Record<string, unknown> = { qualityPref, batchSize };
+    if (trackIds && trackIds.length > 0) body.trackIds = trackIds;
+    const res = await fetch("/api/soulseek/bulk-download", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { setBulkRunning(false); return; }
+    connectBulkSSE();
   }
 
   const showQueue = queueStats && queueStats.total > 0;

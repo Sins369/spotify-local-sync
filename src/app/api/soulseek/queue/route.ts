@@ -16,10 +16,11 @@ export async function GET() {
            CASE d.status
              WHEN 'downloading' THEN 0
              WHEN 'tagging' THEN 1
-             WHEN 'queued' THEN 2
-             WHEN 'failed' THEN 3
-             WHEN 'complete' THEN 4
-             ELSE 5
+             WHEN 'pending_search' THEN 2
+             WHEN 'queued' THEN 3
+             WHEN 'failed' THEN 4
+             WHEN 'complete' THEN 5
+             ELSE 6
            END,
            d.created_at DESC
          LIMIT 200`
@@ -46,6 +47,7 @@ export async function GET() {
       .prepare(
         `SELECT
            SUM(CASE WHEN status = 'downloading' OR status = 'tagging' THEN 1 ELSE 0 END) as active,
+           SUM(CASE WHEN status = 'pending_search' THEN 1 ELSE 0 END) as searching,
            SUM(CASE WHEN status = 'queued' THEN 1 ELSE 0 END) as queued,
            SUM(CASE WHEN status = 'complete' THEN 1 ELSE 0 END) as completed,
            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed,

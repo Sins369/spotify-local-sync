@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
-import { runBulkDownload, isBulkRunning } from "@/lib/bulk-downloader";
+import { startDownloadWorker } from "@/lib/download-worker";
 
 export async function POST(request: NextRequest) {
   try {
-    if (isBulkRunning()) {
-      return NextResponse.json({ error: "Bulk download already in progress" }, { status: 409 });
-    }
-
     const body = await request.json();
-    const qualityPref = body.qualityPref || "any";
     const batchSize = body.batchSize || 25;
     let trackIds: number[] = body.trackIds ?? [];
 
@@ -20,9 +15,7 @@ export async function POST(request: NextRequest) {
         SELECT st.id FROM spotify_tracks st
         LEFT JOIN matches m ON st.id = m.spotify_track_id
         WHERE m.id IS NULL
-        AND st.id NOT IN (
-          SELECT spotify_track_id FROM downloads WHERE status IN ('complete', 'downloading', 'tagging', 'queued')
-        )
+        AND st.id NOT IN (SELECT spotify_track_id FROM downloads)
         ORDER BY st.id ASC
       `).all() as Array<{ id: number }>;
       trackIds = missing.map((r) => r.id);
@@ -36,9 +29,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No tracks to download" }, { status: 400 });
     }
 
-    runBulkDownload(trackIds, qualityPref).catch(() => {});
+    const insert = db.prepare(
+      "INSERT OR IGNORE INTO downloads (spotify_track_id, status) VALUES (?, 'pending_search')"
+    );
+    let queued = 0;
+    db.transaction(() => {
+      for (const id of trackIds) {
+        const r = insert.run(id);
+        if (r.changes > 0) queued++;
+      }
+    })();
 
-    return NextResponse.json({ started: true, totalTracks: trackIds.length });
+    startDownloadWorker();
+
+    return NextResponse.json({ started: true, queued, totalTracks: trackIds.length });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Failed to start bulk download" },

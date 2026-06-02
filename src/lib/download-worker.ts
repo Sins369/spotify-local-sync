@@ -36,6 +36,16 @@ async function processQueue(): Promise<void> {
 
   if (activeCount >= maxConcurrent) return;
 
+  // Process pending_search items (from bulk download) — search + queue one at a time
+  const pendingSearch = db.prepare(
+    "SELECT id, spotify_track_id FROM downloads WHERE status = 'pending_search' ORDER BY created_at ASC LIMIT 1"
+  ).get() as { id: number; spotify_track_id: number } | undefined;
+
+  if (pendingSearch) {
+    await processPendingSearch(pendingSearch.id, pendingSearch.spotify_track_id);
+    return;
+  }
+
   const queued = db.prepare(
     "SELECT * FROM downloads WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
   ).all() as Array<{
@@ -284,6 +294,48 @@ async function findAlternateSource(
   }
 
   return null;
+}
+
+async function processPendingSearch(downloadId: number, spotifyTrackId: number): Promise<void> {
+  const db = getDb();
+  const track = db.prepare("SELECT title, artist FROM spotify_tracks WHERE id = ?")
+    .get(spotifyTrackId) as { title: string; artist: string } | undefined;
+
+  if (!track) {
+    db.prepare("UPDATE downloads SET status = 'failed', error = 'Track not found' WHERE id = ?").run(downloadId);
+    return;
+  }
+
+  if (!await ensureConnected()) {
+    db.prepare("UPDATE downloads SET status = 'failed', error = 'Soulseek not connected' WHERE id = ?").run(downloadId);
+    return;
+  }
+
+  const firstArtist = track.artist.split(",")[0].trim();
+  let source: { username: string; file: string; size: number; format: string; bitrate: number | null } | null = null;
+
+  try {
+    const results = await searchSoulseek(`${firstArtist} ${track.title}`);
+    const viable = results.filter(r => r.size > 500000);
+    if (viable.length > 0) {
+      viable.sort((a, b) => {
+        const aFree = a.queueLength === 0 ? 0 : 1;
+        const bFree = b.queueLength === 0 ? 0 : 1;
+        if (aFree !== bFree) return aFree - bFree;
+        return (b.bitrate ?? 0) - (a.bitrate ?? 0);
+      });
+      source = viable[0];
+    }
+  } catch {}
+
+  if (source) {
+    const path = await import("path");
+    db.prepare(
+      "UPDATE downloads SET status = 'queued', source_user = ?, source_file = ?, filename = ?, file_size = ?, format = ?, bitrate = ? WHERE id = ?"
+    ).run(source.username, source.file, path.basename(source.file), source.size, source.format, source.bitrate, downloadId);
+  } else {
+    db.prepare("UPDATE downloads SET status = 'failed', error = 'No sources found on Soulseek' WHERE id = ?").run(downloadId);
+  }
 }
 
 function sleep(ms: number): Promise<void> {

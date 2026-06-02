@@ -74,9 +74,6 @@ export default function SyncPage() {
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [bulkRunning, setBulkRunning] = useState(false);
-  const [bulkProgress, setBulkProgress] = useState<{ searched: number; queued: number; noResults: number; total: number } | null>(null);
-  const [bulkTrackStatus, setBulkTrackStatus] = useState<Map<number, "searching" | "queued" | "no_results">>(new Map());
   const [batchSize, setBatchSize] = useState<number | "all">(25);
   const [failedTrackIds, setFailedTrackIds] = useState<Set<number>>(new Set());
 
@@ -135,29 +132,6 @@ export default function SyncPage() {
     fetchQueue();
     fetch("/api/soulseek/connect", { method: "POST" }).catch(() => {});
 
-    // Check if bulk download is already running (e.g. after navigation)
-    fetch("/api/soulseek/bulk-progress").then(res => {
-      if (!res.ok || !res.body) return;
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      reader.read().then(({ value, done }) => {
-        if (done || !value) return;
-        reader.cancel();
-        try {
-          const text = decoder.decode(value);
-          const match = text.match(/data: (.+)/);
-          if (match) {
-            const data = JSON.parse(match[1]);
-            if (data.type === "progress" && data.total > 0) {
-              setBulkRunning(true);
-              setBulkProgress(data);
-              connectBulkSSE();
-            }
-          }
-        } catch {}
-      });
-    }).catch(() => {});
-
     const interval = setInterval(fetchQueue, 5000);
     return () => clearInterval(interval);
   }, [fetchMissingLocally, fetchMissingOnSpotify, checkMatches, fetchQueue]);
@@ -205,38 +179,20 @@ export default function SyncPage() {
     setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   }
 
-  function connectBulkSSE() {
-    const es = new EventSource("/api/soulseek/bulk-progress");
-    es.onmessage = (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        if (data.type === "searching") setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "searching"));
-        else if (data.type === "queued") {
-          setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "queued"));
-          setDownloadedIds(prev => new Set(prev).add(data.trackId));
-          setMissingLocally(prev => prev.filter(t => t.id !== data.trackId));
-        } else if (data.type === "no_results") setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "no_results"));
-        else if (data.type === "progress") setBulkProgress(data);
-        else if (data.type === "done") {
-          es.close(); setBulkRunning(false); setSelectedIds(new Set());
-          fetchMissingLocally(); fetchQueue();
-        }
-      } catch {}
-    };
-    es.onerror = () => { es.close(); };
-  }
-
   async function startBulkDownload(trackIds?: number[]) {
-    setBulkRunning(true);
-    setBulkProgress(null);
-    setBulkTrackStatus(new Map());
-    const body: Record<string, unknown> = { qualityPref, batchSize };
+    const body: Record<string, unknown> = { batchSize };
     if (trackIds && trackIds.length > 0) body.trackIds = trackIds;
     const res = await fetch("/api/soulseek/bulk-download", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
-    if (!res.ok) { setBulkRunning(false); return; }
-    connectBulkSSE();
+    if (res.ok) {
+      const data = await res.json();
+      if (data.queued > 0) {
+        setSelectedIds(new Set());
+        fetchMissingLocally();
+        fetchQueue();
+      }
+    }
   }
 
   const showQueue = queueStats && queueStats.total > 0;
@@ -303,45 +259,28 @@ export default function SyncPage() {
       {tab === "download" && (
         <>
         {/* Bulk Action Bar */}
-        {bulkRunning && bulkProgress ? (
-          <div className="shrink-0 mb-3 p-3 rounded-lg bg-[#1c1c28] border border-[rgba(255,255,255,0.06)]">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[12px] text-[#e0e0e8]">
-                Searching {bulkProgress.searched}/{bulkProgress.total}...
-                {bulkProgress.queued > 0 && ` · ${bulkProgress.queued} queued`}
-                {bulkProgress.noResults > 0 && ` · ${bulkProgress.noResults} unavailable`}
-              </span>
-              <button onClick={() => fetch("/api/soulseek/bulk-cancel", { method: "POST" })} className="text-[11px] text-[#e05566] hover:underline">Cancel</button>
-            </div>
-            <div className="w-full h-1.5 bg-[#24243a] rounded-full overflow-hidden">
-              <div className="h-full bg-[#34d399] rounded-full transition-all duration-300"
-                style={{ width: `${bulkProgress.total > 0 ? (bulkProgress.searched / bulkProgress.total) * 100 : 0}%` }} />
-            </div>
-          </div>
-        ) : (
-          <div className="shrink-0 mb-3 flex items-center gap-3 flex-wrap">
-            <button onClick={() => setSelectedIds(new Set(filteredLocal.map(t => t.id)))} className="text-[11px] text-[#8888a0] hover:text-[#e0e0e8]">Select all</button>
-            <button onClick={() => setSelectedIds(new Set())} className="text-[11px] text-[#8888a0] hover:text-[#e0e0e8]">Deselect all</button>
-            <select value={String(batchSize)} onChange={(e) => setBatchSize(e.target.value === "all" ? "all" : parseInt(e.target.value))}
-              className="bg-[#141420] border border-[rgba(255,255,255,0.06)] text-[11px] text-[#8888a0] rounded px-2 py-1 outline-none">
-              <option value="10">10 tracks</option>
-              <option value="25">25 tracks</option>
-              <option value="50">50 tracks</option>
-              <option value="all">All tracks</option>
-            </select>
-            <div className="flex-1" />
-            {selectedIds.size > 0 && (
-              <button onClick={() => startBulkDownload([...selectedIds])}
-                className="px-3 py-1.5 rounded bg-[#34d399] text-[#12121c] text-[12px] font-semibold hover:brightness-110 transition-all">
-                Download {selectedIds.size} Selected
-              </button>
-            )}
-            <button onClick={() => startBulkDownload()}
-              className="px-3 py-1.5 rounded bg-[#24243a] text-[#e0e0e8] text-[12px] font-medium hover:bg-[#34d399] hover:text-[#12121c] transition-all">
-              {batchSize === "all" ? "Download All" : `Download Next ${batchSize}`}
+        <div className="shrink-0 mb-3 flex items-center gap-3 flex-wrap">
+          <button onClick={() => setSelectedIds(new Set(filteredLocal.map(t => t.id)))} className="text-[11px] text-[#8888a0] hover:text-[#e0e0e8]">Select all</button>
+          <button onClick={() => setSelectedIds(new Set())} className="text-[11px] text-[#8888a0] hover:text-[#e0e0e8]">Deselect all</button>
+          <select value={String(batchSize)} onChange={(e) => setBatchSize(e.target.value === "all" ? "all" : parseInt(e.target.value))}
+            className="bg-[#141420] border border-[rgba(255,255,255,0.06)] text-[11px] text-[#8888a0] rounded px-2 py-1 outline-none">
+            <option value="10">10 tracks</option>
+            <option value="25">25 tracks</option>
+            <option value="50">50 tracks</option>
+            <option value="all">All tracks</option>
+          </select>
+          <div className="flex-1" />
+          {selectedIds.size > 0 && (
+            <button onClick={() => startBulkDownload([...selectedIds])}
+              className="px-3 py-1.5 rounded bg-[#34d399] text-[#12121c] text-[12px] font-semibold hover:brightness-110 transition-all">
+              Download {selectedIds.size} Selected
             </button>
-          </div>
-        )}
+          )}
+          <button onClick={() => startBulkDownload()}
+            className="px-3 py-1.5 rounded bg-[#24243a] text-[#e0e0e8] text-[12px] font-medium hover:bg-[#34d399] hover:text-[#12121c] transition-all">
+            {batchSize === "all" ? "Download All" : `Download Next ${batchSize}`}
+          </button>
+        </div>
         <div className="flex-1 flex min-h-0 gap-0 rounded-lg overflow-hidden border border-[rgba(255,255,255,0.06)]">
           {/* Left Panel */}
           <div className="w-[35%] min-w-[280px] max-w-[400px] shrink-0 flex flex-col border-r border-[rgba(255,255,255,0.06)] bg-[#1c1c28]">
@@ -414,7 +353,7 @@ export default function SyncPage() {
                           isSelected
                             ? "bg-[#24243a] border-l-[3px] border-l-[#f59e0b]"
                             : "border-l-[3px] border-l-transparent hover:bg-[#24243a]/50"
-                        } ${isQueued || bulkTrackStatus.get(track.id) === "queued" ? "opacity-50" : ""}`}
+                        } ${isQueued ? "opacity-50" : ""}`}
                       >
                         <input type="checkbox" checked={selectedIds.has(track.id)}
                           onChange={(e) => { e.stopPropagation(); toggleSelect(track.id); }}
@@ -424,16 +363,10 @@ export default function SyncPage() {
                           <p className="text-[14px] text-[#e0e0e8] truncate">{track.title ?? "Unknown"}</p>
                           <p className="text-[12px] text-[#8888a0] truncate">{track.artist ?? "Unknown"}</p>
                         </div>
-                        {bulkTrackStatus.get(track.id) === "searching" && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] font-semibold uppercase shrink-0 animate-pulse">Searching</span>
-                        )}
-                        {bulkTrackStatus.get(track.id) === "no_results" && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#24243a] text-[#5a5a6e] font-semibold uppercase shrink-0">No results</span>
-                        )}
-                        {(isQueued || bulkTrackStatus.get(track.id) === "queued") && (
+                        {isQueued && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#34d399]/20 text-[#34d399] font-semibold uppercase shrink-0">Queued</span>
                         )}
-                        {failedTrackIds.has(track.id) && !isQueued && bulkTrackStatus.get(track.id) !== "queued" && (
+                        {failedTrackIds.has(track.id) && !isQueued && (
                           <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#e05566]/20 text-[#e05566] font-semibold uppercase shrink-0">Failed</span>
                         )}
                       </button>

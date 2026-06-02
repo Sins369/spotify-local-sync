@@ -36,15 +36,19 @@ async function processQueue(): Promise<void> {
 
   if (activeCount >= maxConcurrent) return;
 
-  // Process pending_search items (from bulk download) — search + queue one at a time
+  // Process one pending_search (from bulk download) — search + queue
   const pendingSearch = db.prepare(
     "SELECT id, spotify_track_id FROM downloads WHERE status = 'pending_search' ORDER BY created_at ASC LIMIT 1"
   ).get() as { id: number; spotify_track_id: number } | undefined;
 
   if (pendingSearch) {
     await processPendingSearch(pendingSearch.id, pendingSearch.spotify_track_id);
-    return;
+    // Don't return — also process a queued download below
   }
+
+  // Re-check active count (pending_search might have queued one)
+  const currentActive = (db.prepare("SELECT COUNT(*) as c FROM downloads WHERE status = 'downloading'").get() as { c: number }).c;
+  if (currentActive >= maxConcurrent) return;
 
   const queued = db.prepare(
     "SELECT * FROM downloads WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"

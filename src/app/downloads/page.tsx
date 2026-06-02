@@ -187,30 +187,6 @@ export default function DownloadsPage() {
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left column: Active / Queued / Failed */}
         <div className="flex-[3] min-w-0 space-y-6">
-          {searching.length > 0 && (
-            <Section label="Searching" count={searching.length}>
-              {searching.map((dl) => (
-                <div key={dl.id} className="bg-[#1c1c28] border border-[rgba(255,255,255,0.06)] rounded-[4px] p-3 flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-[3px] bg-[#24243a] flex items-center justify-center shrink-0">
-                    <Loader2 className="w-4 h-4 text-[#f59e0b] animate-spin" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[14px] text-[#e0e0e8] truncate leading-tight">
-                      {dl.title ?? "Unknown"}
-                    </p>
-                    <p className="text-[12px] text-[#8888a0] truncate mt-0.5">
-                      {dl.artist ?? "Unknown"}
-                    </p>
-                    <p className="text-[10px] text-[#5a5a6e] mt-1">Waiting to search Soulseek...</p>
-                  </div>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#f59e0b]/20 text-[#f59e0b]">
-                    Searching
-                  </span>
-                </div>
-              ))}
-            </Section>
-          )}
-
           <Section label="Active" count={active.length}>
             {active.map((dl) => (
               <DownloadCard
@@ -238,6 +214,24 @@ export default function DownloadsPage() {
               />
             ))}
           </Section>
+
+          {searching.length > 0 && (
+            <Section label="Searching" count={searching.length}>
+              {searching.map((dl) => (
+                <div key={dl.id} className="bg-[#1c1c28] border border-[rgba(255,255,255,0.06)] rounded-[4px] p-3 flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-[3px] bg-[#24243a] flex items-center justify-center shrink-0">
+                    <Loader2 className="w-4 h-4 text-[#f59e0b] animate-spin" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[14px] text-[#e0e0e8] truncate leading-tight">{dl.title ?? "Unknown"}</p>
+                    <p className="text-[12px] text-[#8888a0] truncate mt-0.5">{dl.artist ?? "Unknown"}</p>
+                    <p className="text-[10px] text-[#5a5a6e] mt-1">Searching Soulseek...</p>
+                  </div>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-[3px] bg-[#f59e0b]/20 text-[#f59e0b]">Searching</span>
+                </div>
+              ))}
+            </Section>
+          )}
 
           <Section label="Failed" count={failed.length}>
             {failed.map((dl) => (

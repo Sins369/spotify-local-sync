@@ -36,10 +36,9 @@ async function processQueue(): Promise<void> {
 
   if (activeCount >= maxConcurrent) return;
 
-  const slotsAvailable = maxConcurrent - activeCount;
   const queued = db.prepare(
-    "SELECT * FROM downloads WHERE status = 'queued' ORDER BY created_at ASC LIMIT ?"
-  ).all(slotsAvailable) as Array<{
+    "SELECT * FROM downloads WHERE status = 'queued' ORDER BY created_at ASC LIMIT 1"
+  ).all() as Array<{
     id: number;
     spotify_track_id: number;
     source_user: string;
@@ -173,7 +172,9 @@ async function processDownload(download: {
       "SELECT COUNT(*) as c FROM failed_users WHERE spotify_track_id = ?"
     ).get(download.spotify_track_id) as { c: number }).c;
 
-    if (isRetryable && retryCount < MAX_AUTO_RETRIES) {
+    // Skip auto-retry if many items queued (bulk mode — don't block queue with searches)
+    const queuedCount = (db.prepare("SELECT COUNT(*) as c FROM downloads WHERE status = 'queued'").get() as { c: number }).c;
+    if (isRetryable && retryCount < MAX_AUTO_RETRIES && queuedCount < 3) {
       // Reconnect if peer connection is gone
       if (error.includes("User not exist")) {
         try {

@@ -73,6 +73,11 @@ export default function SyncPage() {
   const [sortBy, setSortBy] = useState<SortOption>("newest");
   const [queueItems, setQueueItems] = useState<QueueItem[]>([]);
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ searched: number; queued: number; noResults: number; total: number } | null>(null);
+  const [bulkTrackStatus, setBulkTrackStatus] = useState<Map<number, "searching" | "queued" | "no_results">>(new Map());
+  const [batchSize, setBatchSize] = useState<number | "all">(25);
 
   const fetchMissingLocally = useCallback(async () => {
     setLoadingLocal(true);
@@ -167,6 +172,39 @@ export default function SyncPage() {
     }
   }
 
+  function toggleSelect(id: number) {
+    setSelectedIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  }
+
+  async function startBulkDownload(trackIds?: number[]) {
+    setBulkRunning(true);
+    setBulkProgress(null);
+    setBulkTrackStatus(new Map());
+    const body: Record<string, unknown> = { qualityPref, batchSize };
+    if (trackIds && trackIds.length > 0) body.trackIds = trackIds;
+    const res = await fetch("/api/soulseek/bulk-download", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    if (!res.ok) { setBulkRunning(false); return; }
+    const es = new EventSource("/api/soulseek/bulk-progress");
+    es.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === "searching") setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "searching"));
+        else if (data.type === "queued") {
+          setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "queued"));
+          setDownloadedIds(prev => new Set(prev).add(data.trackId));
+        } else if (data.type === "no_results") setBulkTrackStatus(prev => new Map(prev).set(data.trackId, "no_results"));
+        else if (data.type === "progress") setBulkProgress(data);
+        else if (data.type === "done") {
+          es.close(); setBulkRunning(false); setSelectedIds(new Set());
+          fetchMissingLocally(); fetchQueue();
+        }
+      } catch {}
+    };
+    es.onerror = () => { es.close(); setBulkRunning(false); };
+  }
+
   const showQueue = queueStats && queueStats.total > 0;
 
   return (
@@ -229,6 +267,47 @@ export default function SyncPage() {
 
       {/* Download Tab */}
       {tab === "download" && (
+        <>
+        {/* Bulk Action Bar */}
+        {bulkRunning && bulkProgress ? (
+          <div className="shrink-0 mb-3 p-3 rounded-lg bg-[#1c1c28] border border-[rgba(255,255,255,0.06)]">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[12px] text-[#e0e0e8]">
+                Searching {bulkProgress.searched}/{bulkProgress.total}...
+                {bulkProgress.queued > 0 && ` · ${bulkProgress.queued} queued`}
+                {bulkProgress.noResults > 0 && ` · ${bulkProgress.noResults} unavailable`}
+              </span>
+              <button onClick={() => fetch("/api/soulseek/bulk-cancel", { method: "POST" })} className="text-[11px] text-[#e05566] hover:underline">Cancel</button>
+            </div>
+            <div className="w-full h-1.5 bg-[#24243a] rounded-full overflow-hidden">
+              <div className="h-full bg-[#34d399] rounded-full transition-all duration-300"
+                style={{ width: `${bulkProgress.total > 0 ? (bulkProgress.searched / bulkProgress.total) * 100 : 0}%` }} />
+            </div>
+          </div>
+        ) : (
+          <div className="shrink-0 mb-3 flex items-center gap-3 flex-wrap">
+            <button onClick={() => setSelectedIds(new Set(filteredLocal.map(t => t.id)))} className="text-[11px] text-[#8888a0] hover:text-[#e0e0e8]">Select all</button>
+            <button onClick={() => setSelectedIds(new Set())} className="text-[11px] text-[#8888a0] hover:text-[#e0e0e8]">Deselect all</button>
+            <select value={String(batchSize)} onChange={(e) => setBatchSize(e.target.value === "all" ? "all" : parseInt(e.target.value))}
+              className="bg-[#141420] border border-[rgba(255,255,255,0.06)] text-[11px] text-[#8888a0] rounded px-2 py-1 outline-none">
+              <option value="10">10 tracks</option>
+              <option value="25">25 tracks</option>
+              <option value="50">50 tracks</option>
+              <option value="all">All tracks</option>
+            </select>
+            <div className="flex-1" />
+            {selectedIds.size > 0 && (
+              <button onClick={() => startBulkDownload([...selectedIds])}
+                className="px-3 py-1.5 rounded bg-[#34d399] text-[#12121c] text-[12px] font-semibold hover:brightness-110 transition-all">
+                Download {selectedIds.size} Selected
+              </button>
+            )}
+            <button onClick={() => startBulkDownload()}
+              className="px-3 py-1.5 rounded bg-[#24243a] text-[#e0e0e8] text-[12px] font-medium hover:bg-[#34d399] hover:text-[#12121c] transition-all">
+              {batchSize === "all" ? "Download All" : `Download Next ${batchSize}`}
+            </button>
+          </div>
+        )}
         <div className="flex-1 flex min-h-0 gap-0 rounded-lg overflow-hidden border border-[rgba(255,255,255,0.06)]">
           {/* Left Panel */}
           <div className="w-[35%] min-w-[280px] max-w-[400px] shrink-0 flex flex-col border-r border-[rgba(255,255,255,0.06)] bg-[#1c1c28]">
@@ -297,20 +376,28 @@ export default function SyncPage() {
                       <button
                         key={`t-${track.id}`}
                         onClick={() => setSelectedTrack(track)}
-                        className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-md transition-all ${
+                        className={`w-full text-left flex items-center gap-2 px-3 py-2.5 rounded-md transition-all ${
                           isSelected
                             ? "bg-[#24243a] border-l-[3px] border-l-[#f59e0b]"
                             : "border-l-[3px] border-l-transparent hover:bg-[#24243a]/50"
-                        } ${isQueued ? "opacity-50" : ""}`}
+                        } ${isQueued || bulkTrackStatus.get(track.id) === "queued" ? "opacity-50" : ""}`}
                       >
+                        <input type="checkbox" checked={selectedIds.has(track.id)}
+                          onChange={(e) => { e.stopPropagation(); toggleSelect(track.id); }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-3.5 h-3.5 accent-[#34d399] shrink-0" />
                         <div className="min-w-0 flex-1">
                           <p className="text-[14px] text-[#e0e0e8] truncate">{track.title ?? "Unknown"}</p>
                           <p className="text-[12px] text-[#8888a0] truncate">{track.artist ?? "Unknown"}</p>
                         </div>
-                        {isQueued && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#34d399]/20 text-[#34d399] font-semibold uppercase shrink-0">
-                            Queued
-                          </span>
+                        {bulkTrackStatus.get(track.id) === "searching" && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#f59e0b]/20 text-[#f59e0b] font-semibold uppercase shrink-0 animate-pulse">Searching</span>
+                        )}
+                        {bulkTrackStatus.get(track.id) === "no_results" && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#24243a] text-[#5a5a6e] font-semibold uppercase shrink-0">No results</span>
+                        )}
+                        {(isQueued || bulkTrackStatus.get(track.id) === "queued") && (
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#34d399]/20 text-[#34d399] font-semibold uppercase shrink-0">Queued</span>
                         )}
                       </button>
                     );
@@ -340,6 +427,7 @@ export default function SyncPage() {
             )}
           </div>
         </div>
+        </>
       )}
 
       {/* Like Tab */}
